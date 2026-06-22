@@ -1,82 +1,62 @@
 /**
  * CONTINUITY — Autonomous Diagnostic Trading Agent
- * Built for Bitget AI Base Camp Hackathon S1 — Trading Agent Track
+ * Bitget AI Base Camp Hackathon S1 — Trading Agent Track
  *
- * Core thesis:
- * Most trading bots act constantly to look "active." Continuity instead
- * runs a continuous diagnostic on the market — checking whether trend,
- * volatility, and sentiment signals agree with each other — and sizes
- * every paper trade according to how strongly those signals agree.
+ * Thesis: most trading bots act constantly to look "active." Continuity
+ * instead diagnoses the market every cycle — checking whether trend,
+ * volatility, and sentiment agree — and only commits paper-trading size
+ * in proportion to how strongly they agree.
  *
- * Three states, every single cycle (it always logs something):
- *   DIAGNOSED      -> signals strongly agree -> full-size paper trade
- *   INCONCLUSIVE   -> signals partially agree -> reduced-size paper trade
- *   FAULT          -> signals contradict / extreme noise -> refuses to trade
+ * Three states per pair, every cycle:
+ *   DIAGNOSED     -> signals strongly agree   -> full-size paper trade
+ *   INCONCLUSIVE  -> signals partially agree  -> reduced-size paper trade
+ *   FAULT         -> signals contradict/noisy -> refuses to trade
  *
- * No real funds are ever used. This is a paper-trading simulation that
- * reads real public market data from Bitget.
+ * Paper trading only. Reads real public market data from Bitget.
  */
 
 const fs = require('fs');
 const path = require('path');
 const http = require('http');
-const crypto = require('crypto');
 
 // ---------- Configuration ----------
 
 const CONFIG = {
   PAIRS: ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'XRPUSDT', 'DOGEUSDT', 'ADAUSDT', 'AVAXUSDT', 'LINKUSDT'],
-  PRODUCT_TYPE: 'usdt-futures', // Bitget public market data product type (lowercase per API spec)
-  CHECK_INTERVAL_MS: 15 * 60 * 1000, // 15 minutes
-  STARTING_BALANCE: 10000, // fake USDT, paper trading only — shared across all pairs
+  PRODUCT_TYPE: 'usdt-futures',
+  CHECK_INTERVAL_MS: 15 * 60 * 1000,
+  STARTING_BALANCE: 10000, // shared paper balance across all pairs
   LOG_FILE: path.join(__dirname, 'data', 'trades_log.csv'),
   STATE_FILE: path.join(__dirname, 'data', 'state.json'),
   PORT: process.env.PORT || 3000,
-  // Position sizing tiers based on conviction score (0-100)
-  FAULT_THRESHOLD: 30,      // below this -> refuse to trade
-  DIAGNOSED_THRESHOLD: 70,  // above this -> full size
-  MAX_POSITION_PCT: 0.25,   // max 25% of balance on a full-conviction trade, per pair per cycle
-  PAIR_STAGGER_MS: 2000,    // small delay between pairs in a cycle to be polite to the API
-  // GitHub backup — keeps the log safe even if the container restarts and
-  // wipes its local disk (e.g. Railway redeploys, trial credit runs out and
-  // restarts on a new instance, etc). Set these as Railway environment
-  // variables — never commit them to the repo.
+  FAULT_THRESHOLD: 30,
+  DIAGNOSED_THRESHOLD: 70,
+  MAX_POSITION_PCT: 0.25, // max share of balance sized into one full-conviction trade
+  PAIR_STAGGER_MS: 2000,
+  // GitHub backup so trade history and open positions survive a container
+  // restart. Optional — if unset, the agent runs the same, just without backup.
   GITHUB_TOKEN: process.env.GITHUB_TOKEN || null,
-  GITHUB_REPO: process.env.GITHUB_REPO || null, // format: "username/repo-name"
-  GITHUB_SYNC_INTERVAL_MS: 60 * 60 * 1000, // push the log to GitHub once an hour
-  // P&L tracking — positions are held for a fixed window, then closed and
-  // scored against real price movement. Written to a SEPARATE log file so
-  // the original trades_log.csv format and parser are never touched.
-  POSITION_HOLD_MS: 60 * 60 * 1000, // 1 hour
-  STOP_LOSS_PCT: 0.02, // close early if a position moves 2% against entry before the hold window ends
-  POSITION_CHECK_INTERVAL_MS: 3 * 60 * 1000, // check open positions for stop-loss/expiry every 3 minutes, independent of the slower full signal sweep
+  GITHUB_REPO: process.env.GITHUB_REPO || null,
+  GITHUB_SYNC_INTERVAL_MS: 60 * 60 * 1000,
+  POSITION_HOLD_MS: 60 * 60 * 1000,
+  STOP_LOSS_PCT: 0.02, // close early if a position moves 2% against entry
+  POSITION_CHECK_INTERVAL_MS: 3 * 60 * 1000, // dedicated faster timer for stop-loss checks
   PNL_LOG_FILE: path.join(__dirname, 'data', 'closed_trades.csv'),
 };
-
-// ---------- Data directory setup ----------
 
 const DATA_DIR = path.join(__dirname, 'data');
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
 // ---------- GitHub backup sync ----------
-// Pushes trades_log.csv to the GitHub repo periodically so the trade
-// history survives container restarts. Uses GitHub's REST "create or
-// update file contents" endpoint. Requires GITHUB_TOKEN and GITHUB_REPO
-// to be set as environment variables — if absent, this silently does
-// nothing and the agent runs exactly as before.
 
 async function getFileSha(repoPath) {
   const url = `https://api.github.com/repos/${CONFIG.GITHUB_REPO}/contents/${repoPath}`;
   const res = await fetch(url, {
-    headers: {
-      Authorization: `Bearer ${CONFIG.GITHUB_TOKEN}`,
-      Accept: 'application/vnd.github+json',
-    },
+    headers: { Authorization: `Bearer ${CONFIG.GITHUB_TOKEN}`, Accept: 'application/vnd.github+json' },
   });
-  if (res.status === 404) return null; // file doesn't exist yet — that's fine, we'll create it
+  if (res.status === 404) return null;
   if (!res.ok) throw new Error(`GitHub get-file failed: ${res.status}`);
-  const json = await res.json();
-  return json.sha;
+  return (await res.json()).sha;
 }
 
 async function pullFileFromGitHub(repoPath, localPath) {
@@ -84,16 +64,12 @@ async function pullFileFromGitHub(repoPath, localPath) {
   try {
     const url = `https://api.github.com/repos/${CONFIG.GITHUB_REPO}/contents/${repoPath}`;
     const res = await fetch(url, {
-      headers: {
-        Authorization: `Bearer ${CONFIG.GITHUB_TOKEN}`,
-        Accept: 'application/vnd.github+json',
-      },
+      headers: { Authorization: `Bearer ${CONFIG.GITHUB_TOKEN}`, Accept: 'application/vnd.github+json' },
     });
-    if (res.status === 404) return false; // nothing saved yet — that's fine, first ever run
+    if (res.status === 404) return false;
     if (!res.ok) throw new Error(`GitHub get-file failed: ${res.status}`);
     const json = await res.json();
-    const content = Buffer.from(json.content, 'base64').toString('utf8');
-    fs.writeFileSync(localPath, content);
+    fs.writeFileSync(localPath, Buffer.from(json.content, 'base64').toString('utf8'));
     console.log(`Restored ${repoPath} from GitHub backup.`);
     return true;
   } catch (err) {
@@ -103,19 +79,11 @@ async function pullFileFromGitHub(repoPath, localPath) {
 }
 
 async function pushFileToGitHub(localPath, repoPath, commitMessage) {
-  if (!CONFIG.GITHUB_TOKEN || !CONFIG.GITHUB_REPO) return; // sync disabled, no env vars set
+  if (!CONFIG.GITHUB_TOKEN || !CONFIG.GITHUB_REPO) return;
   try {
     const content = fs.readFileSync(localPath, 'utf8');
-    const contentBase64 = Buffer.from(content, 'utf8').toString('base64');
     const sha = await getFileSha(repoPath);
-
     const url = `https://api.github.com/repos/${CONFIG.GITHUB_REPO}/contents/${repoPath}`;
-    const body = {
-      message: commitMessage,
-      content: contentBase64,
-      ...(sha ? { sha } : {}), // include sha only when updating an existing file
-    };
-
     const res = await fetch(url, {
       method: 'PUT',
       headers: {
@@ -123,70 +91,51 @@ async function pushFileToGitHub(localPath, repoPath, commitMessage) {
         Accept: 'application/vnd.github+json',
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(body),
+      body: JSON.stringify({
+        message: commitMessage,
+        content: Buffer.from(content, 'utf8').toString('base64'),
+        ...(sha ? { sha } : {}),
+      }),
     });
-
-    if (!res.ok) {
-      const errText = await res.text();
-      throw new Error(`GitHub push failed: ${res.status} ${errText.slice(0, 200)}`);
-    }
-
+    if (!res.ok) throw new Error(`GitHub push failed: ${res.status} ${(await res.text()).slice(0, 200)}`);
     console.log(`Synced ${repoPath} to GitHub.`);
   } catch (err) {
-    // A sync failure should never crash the trading loop — just log it
-    // and try again on the next scheduled sync.
+    // Never let a sync failure crash the trading loop — retry next interval.
     console.warn('GitHub sync failed (will retry next cycle):', err.message);
   }
 }
 
 async function syncToGitHub() {
   if (!CONFIG.GITHUB_TOKEN || !CONFIG.GITHUB_REPO) return;
-  const timestamp = new Date().toISOString();
-  await pushFileToGitHub(
-    CONFIG.LOG_FILE,
-    'agent/data/trades_log.csv',
-    `Continuity log sync — ${timestamp}`
-  );
+  const ts = new Date().toISOString();
+  await pushFileToGitHub(CONFIG.LOG_FILE, 'agent/data/trades_log.csv', `Continuity log sync — ${ts}`);
   if (fs.existsSync(CONFIG.PNL_LOG_FILE)) {
-    await pushFileToGitHub(
-      CONFIG.PNL_LOG_FILE,
-      'agent/data/closed_trades.csv',
-      `Continuity P&L sync — ${timestamp}`
-    );
+    await pushFileToGitHub(CONFIG.PNL_LOG_FILE, 'agent/data/closed_trades.csv', `Continuity P&L sync — ${ts}`);
   }
   if (fs.existsSync(CONFIG.STATE_FILE)) {
-    // Backing up state.json means open positions survive a fresh container
-    // build (e.g. a Railway redeploy), not just the two CSV logs. Without
-    // this, a redeploy mid-position silently resets that pair's open
-    // position and its 1-hour hold clock, and it would never close.
-    await pushFileToGitHub(
-      CONFIG.STATE_FILE,
-      'agent/data/state.json',
-      `Continuity state sync — ${timestamp}`
-    );
+    // Backing up state.json (not just the CSVs) is what lets an open
+    // position survive a container restart instead of silently resetting
+    // its hold-window clock.
+    await pushFileToGitHub(CONFIG.STATE_FILE, 'agent/data/state.json', `Continuity state sync — ${ts}`);
   }
 }
 
 if (!fs.existsSync(CONFIG.LOG_FILE)) {
-  fs.writeFileSync(
-    CONFIG.LOG_FILE,
-    'timestamp,pair,state,conviction_score,direction,price,quantity,balance_change,balance_after,reason\n'
-  );
+  fs.writeFileSync(CONFIG.LOG_FILE, 'timestamp,pair,state,conviction_score,direction,price,quantity,balance_change,balance_after,reason\n');
 }
 
 if (!fs.existsSync(CONFIG.PNL_LOG_FILE)) {
-  fs.writeFileSync(
-    CONFIG.PNL_LOG_FILE,
-    'opened_at,closed_at,pair,direction,conviction_score,entry_price,exit_price,quantity,realized_pnl,balance_after\n'
-  );
+  fs.writeFileSync(CONFIG.PNL_LOG_FILE, 'opened_at,closed_at,pair,direction,conviction_score,entry_price,exit_price,quantity,realized_pnl,balance_after\n');
 }
+
+// ---------- State ----------
 
 function loadState() {
   if (fs.existsSync(CONFIG.STATE_FILE)) {
     try {
       const loaded = JSON.parse(fs.readFileSync(CONFIG.STATE_FILE, 'utf8'));
-      // Migration: older single-pair state files won't have `pairs` — rebuild it.
       if (!loaded.pairs) {
+        // Migration from an older single-pair state shape.
         loaded.pairs = {};
         CONFIG.PAIRS.forEach((p) => {
           loaded.pairs[p] = { priceHistory: loaded.priceHistory || [], lastDecision: null, openPosition: null };
@@ -194,8 +143,6 @@ function loadState() {
       }
       CONFIG.PAIRS.forEach((p) => {
         if (!loaded.pairs[p]) loaded.pairs[p] = { priceHistory: [], lastDecision: null, openPosition: null };
-        // Migration: existing pair entries from before P&L tracking won't
-        // have openPosition — default it safely rather than crash on access.
         if (loaded.pairs[p].openPosition === undefined) loaded.pairs[p].openPosition = null;
       });
       return loaded;
@@ -204,40 +151,27 @@ function loadState() {
     }
   }
   const pairs = {};
-  CONFIG.PAIRS.forEach((p) => {
-    pairs[p] = { priceHistory: [], lastDecision: null, openPosition: null };
-  });
-  return {
-    balance: CONFIG.STARTING_BALANCE, // shared paper balance across all pairs
-    pairs,
-    cyclesRun: 0,
-  };
+  CONFIG.PAIRS.forEach((p) => { pairs[p] = { priceHistory: [], lastDecision: null, openPosition: null }; });
+  return { balance: CONFIG.STARTING_BALANCE, pairs, cyclesRun: 0 };
 }
 
 function saveState(state) {
   fs.writeFileSync(CONFIG.STATE_FILE, JSON.stringify(state, null, 2));
 }
 
-// `state` is initialized properly inside startAgent() below, after
-// attempting to restore state.json from GitHub (if configured). This
-// placeholder exists only so other functions can reference `state` by
-// name before startAgent() runs; it's replaced before any cycle executes.
+// Replaced with the real loaded state inside startAgent(), after an
+// attempted GitHub restore. Exists only so later functions can reference
+// `state` by name before startAgent() runs.
 let state = { balance: CONFIG.STARTING_BALANCE, pairs: {}, cyclesRun: 0 };
 
 // ---------- Bitget public market data ----------
-// Public market endpoints do not require signed auth, but we attach the
-// API key as a header where Bitget allows it for higher rate limits.
-// Secret/passphrase are read from environment variables (Railway env vars)
-// and are NEVER written to disk or logged.
 
 const BITGET_BASE_URL = 'https://api.bitget.com';
 
 async function fetchTicker(pair) {
   const url = `${BITGET_BASE_URL}/api/v2/mix/market/ticker?symbol=${pair}&productType=${CONFIG.PRODUCT_TYPE}`;
   const res = await fetch(url, {
-    headers: process.env.BITGET_API_KEY
-      ? { 'ACCESS-KEY': process.env.BITGET_API_KEY }
-      : {},
+    headers: process.env.BITGET_API_KEY ? { 'ACCESS-KEY': process.env.BITGET_API_KEY } : {},
   });
   if (!res.ok) throw new Error(`Ticker fetch failed: ${res.status}`);
   const json = await res.json();
@@ -250,17 +184,15 @@ async function fetchTicker(pair) {
 async function fetchCandles(pair, limit = 50) {
   const url = `${BITGET_BASE_URL}/api/v2/mix/market/candles?symbol=${pair}&productType=${CONFIG.PRODUCT_TYPE}&granularity=15m&limit=${limit}`;
   const res = await fetch(url, {
-    headers: process.env.BITGET_API_KEY
-      ? { 'ACCESS-KEY': process.env.BITGET_API_KEY }
-      : {},
+    headers: process.env.BITGET_API_KEY ? { 'ACCESS-KEY': process.env.BITGET_API_KEY } : {},
   });
   if (!res.ok) throw new Error(`Candle fetch failed: ${res.status}`);
   const json = await res.json();
   if (json.code !== '00000' || !Array.isArray(json.data)) {
     throw new Error(`Unexpected candle response: ${JSON.stringify(json)}`);
   }
-  // Bitget returns newest-first; each row: [ts, open, high, low, close, baseVol, quoteVol]
-  return json.data.map((row) => parseFloat(row[4])).reverse(); // closes, oldest->newest
+  // Bitget returns newest-first as [ts, open, high, low, close, baseVol, quoteVol].
+  return json.data.map((row) => parseFloat(row[4])).reverse();
 }
 
 async function fetchLongShortRatio(pair) {
@@ -268,93 +200,69 @@ async function fetchLongShortRatio(pair) {
   try {
     const res = await fetch(url);
     if (!res.ok) {
-      // Try to read Bitget's actual error body (code + msg) instead of
-      // discarding it — a bare HTTP status alone doesn't tell us WHY a
-      // pair's request is being rejected, which matters since some pairs
-      // fail consistently while others don't.
+      // Surface Bitget's actual error code/message, not just the HTTP
+      // status — needed to tell a real outage apart from "no data for
+      // this symbol."
       let detail = '';
       try {
         const errJson = await res.json();
         detail = ` — ${errJson.code || ''} ${errJson.msg || ''}`.trim();
-      } catch (parseErr) {
-        // body wasn't JSON or was empty — fall back to just the status
-      }
+      } catch (_) { /* body wasn't JSON — fall back to bare status */ }
       throw new Error(`status ${res.status}${detail}`);
     }
     const json = await res.json();
     if (json.code === '00000' && Array.isArray(json.data) && json.data[0]) {
       return parseFloat(json.data[0].longShortRatio);
     }
-    // Request succeeded (200 OK) but Bitget's own response body signals a
-    // problem (non-success code, or missing/empty data) — surface that
-    // distinctly from a transport-level failure so logs are honest about
-    // which case actually happened.
     throw new Error(`unexpected response code=${json.code} msg=${json.msg || 'n/a'}`);
   } catch (e) {
     console.warn(`Long/short ratio unavailable for ${pair}, defaulting to neutral 1.0:`, e.message);
   }
-  return 1.0; // neutral fallback — keeps the agent running even if this endpoint changes
+  return 1.0;
 }
 
 // ---------- Diagnostic engine ----------
-// Three independent "signals" are checked. Each contributes a -100..+100
-// directional reading. How strongly they AGREE (not just their average)
-// determines the conviction score.
+// Three signals, each a -100..+100 directional reading. Conviction comes
+// from how strongly trend and sentiment AGREE, not their raw average.
 
 function trendSignal(closes) {
   if (closes.length < 10) return { value: 0, label: 'insufficient data' };
   const recent = closes.slice(-10);
-  const first = recent[0];
-  const last = recent[recent.length - 1];
-  const pctChange = ((last - first) / first) * 100;
-  // Normalize: a 2% move over 10 candles (~2.5h) is a strong trend for BTC
+  const pctChange = ((recent[recent.length - 1] - recent[0]) / recent[0]) * 100;
+  // A 2% move over 10 candles (~2.5h) is treated as a strong trend.
   const value = Math.max(-100, Math.min(100, (pctChange / 2) * 100));
   return { value, label: `${pctChange.toFixed(2)}% move over last 10 candles` };
 }
 
 function volatilitySignal(closes) {
-  if (closes.length < 10) return { value: 0, label: 'insufficient data', raw: 0 };
+  if (closes.length < 10) return { value: 0, label: 'insufficient data' };
   const recent = closes.slice(-10);
   const mean = recent.reduce((a, b) => a + b, 0) / recent.length;
   const variance = recent.reduce((a, b) => a + (b - mean) ** 2, 0) / recent.length;
   const stdDevPct = (Math.sqrt(variance) / mean) * 100;
-  // High volatility doesn't have direction — it REDUCES confidence in trend/sentiment
-  // We return it separately as a dampening factor, not a directional vote.
+  // Volatility has no direction of its own — it only dampens conviction.
   return { value: stdDevPct, label: `${stdDevPct.toFixed(3)}% stdev` };
 }
 
 function sentimentSignal(fundingRate, longShortRatio) {
-  // Funding rate: positive = longs paying shorts = market leaning long (can mean overheated)
-  // Long/short ratio: >1 = more long positions open
-  //
-  // IMPORTANT: crypto perpetuals are long-skewed most of the time as a
-  // structural baseline (L/S ratio sitting at 1.4-2.0 is routine, not
-  // meaningful). Treating any skew above 1 as a bullish confirming signal
-  // means sentiment is almost always positive regardless of real
-  // conditions, which quietly biases the whole diagnostic toward "long"
-  // by default. To fix that, only a genuinely EXTREME skew in either
-  // direction counts as a real signal, and it's treated as contrarian
-  // (an overcrowded trade is a risk, not a green light) — mild skew near
-  // the structural baseline contributes nothing.
+  // Crypto perpetuals sit moderately long-skewed most of the time as a
+  // structural baseline (L/S ratio 1.4-2.0 is routine, not meaningful).
+  // Only a genuinely extreme skew counts as a signal, and it's treated
+  // as contrarian — a crowded trade is a risk, not a green light.
   const fundingPct = fundingRate * 100;
-  const extremeFunding = Math.abs(fundingPct) > 0.05; // >0.05% is elevated for perpetuals
-  const extremeLongSkew = longShortRatio > 3.0; // far beyond the routine 1.4-2.0 baseline
-  const extremeShortSkew = longShortRatio < 0.4; // symmetric extreme on the short side
+  const extremeFunding = Math.abs(fundingPct) > 0.05;
+  const extremeLongSkew = longShortRatio > 3.0;
+  const extremeShortSkew = longShortRatio < 0.4;
 
-  let value = 0; // neutral by default — mild/routine positioning carries no signal
+  let value = 0;
   let label = `funding ${fundingPct.toFixed(4)}%, L/S ratio ${longShortRatio.toFixed(2)}`;
 
   if (extremeLongSkew || extremeShortSkew) {
-    // Extreme positioning in either direction is treated as contrarian —
-    // a crowded trade is a warning sign, not confirmation to follow it.
     value = extremeLongSkew ? -60 : 60;
     label += ' — extreme L/S skew, treated as contrarian/crowded';
   }
-
   if (extremeFunding) {
-    // Extreme funding is its own separate contrarian signal. If both
-    // funding and L/S skew are extreme at once, funding takes precedence
-    // since it's a more direct measure of cost-to-hold pressure.
+    // Extreme funding takes precedence over L/S skew if both fire at once.
     value = -Math.sign(fundingPct) * 60;
     label += extremeLongSkew || extremeShortSkew ? '' : ' — extreme funding, treated as contrarian/crowded';
   }
@@ -362,26 +270,31 @@ function sentimentSignal(fundingRate, longShortRatio) {
   return { value: Math.max(-100, Math.min(100, value)), label };
 }
 
+function pickDirection(trendValue, sentimentValue) {
+  // Whichever signal has the larger magnitude decides direction. If both
+  // are exactly zero (no real signal either way), there's no honest basis
+  // for a direction — this only matters in FAULT territory since
+  // conviction is 0 either way, but the result should say so rather than
+  // silently defaulting to "long".
+  if (trendValue === 0 && sentimentValue === 0) return 'none';
+  return Math.abs(trendValue) >= Math.abs(sentimentValue)
+    ? (trendValue >= 0 ? 'long' : 'short')
+    : (sentimentValue >= 0 ? 'long' : 'short');
+}
+
 function runDiagnostic(closes, fundingRate, longShortRatio) {
   const trend = trendSignal(closes);
   const vol = volatilitySignal(closes);
   const sentiment = sentimentSignal(fundingRate, longShortRatio);
 
-  // Agreement check: do trend and sentiment point the same direction?
   const bothNonZero = trend.value !== 0 && sentiment.value !== 0;
   const sameSign = bothNonZero && Math.sign(trend.value) === Math.sign(sentiment.value);
   const magnitude = (Math.abs(trend.value) + Math.abs(sentiment.value)) / 2;
   const agreementBonus = sameSign ? 25 : 0;
-
-  // High volatility dampens conviction — noisy markets are harder to diagnose cleanly
   const volPenalty = Math.min(40, vol.value * 8);
 
-  let convictionScore = Math.max(0, Math.min(100, magnitude + agreementBonus - volPenalty));
-
-  // Direction is whichever directional signal has the larger magnitude
-  const direction = Math.abs(trend.value) >= Math.abs(sentiment.value)
-    ? (trend.value >= 0 ? 'long' : 'short')
-    : (sentiment.value >= 0 ? 'long' : 'short');
+  const convictionScore = Math.max(0, Math.min(100, magnitude + agreementBonus - volPenalty));
+  const direction = pickDirection(trend.value, sentiment.value);
 
   let stateLabel, reason;
   if (convictionScore < CONFIG.FAULT_THRESHOLD) {
@@ -407,12 +320,10 @@ function runDiagnostic(closes, fundingRate, longShortRatio) {
 // ---------- Paper trading execution ----------
 
 function sizePosition(convictionScore, balance, price) {
-  // Linear scaling: 0 conviction (at fault threshold) -> 0 size,
-  // 100 conviction -> MAX_POSITION_PCT of balance.
+  // Linear scaling: 0 conviction -> 0 size, 100 conviction -> MAX_POSITION_PCT of balance.
   const pct = (convictionScore / 100) * CONFIG.MAX_POSITION_PCT;
   const usdSize = balance * pct;
-  const qty = usdSize / price;
-  return { usdSize, qty };
+  return { usdSize, qty: usdSize / price };
 }
 
 function executeCycle(pair, diagnostic, currentPrice) {
@@ -421,79 +332,60 @@ function executeCycle(pair, diagnostic, currentPrice) {
   let qty = 0;
   let balanceChange = 0;
 
-  if (diagnostic.state !== 'FAULT') {
+  // A fee only applies when a NEW position actually opens this cycle —
+  // not on every non-FAULT cycle. Without this guard, a pair that stays
+  // DIAGNOSED/INCONCLUSIVE for several cycles in a row while a position
+  // is already open would get charged a fee each cycle for a trade that
+  // never actually happened, inflating "fee drag" far beyond real cost.
+  const alreadyOpen = !!state.pairs[pair].openPosition;
+  if (diagnostic.state !== 'FAULT' && !alreadyOpen) {
     const { usdSize, qty: sizedQty } = sizePosition(diagnostic.convictionScore, state.balance, currentPrice);
     direction = diagnostic.direction;
     qty = sizedQty;
 
-    // Simulate an immediate paper "round trip" cost-free entry for logging
-    // purposes — this agent logs intent/sizing per cycle rather than holding
-    // open positions across cycles, keeping the log simple and auditable.
-    // A small simulated slippage/fee is applied for realism.
-    const feeRate = 0.0006; // 0.06%, typical taker fee
+    const feeRate = 0.0006; // typical taker fee
     balanceChange = -(usdSize * feeRate);
     state.balance += balanceChange;
 
-    // P&L tracking: open a position to be scored later against real price
-    // movement, separate from the per-cycle log above. Only one open
-    // position per pair at a time — if one's already open, this cycle's
-    // signal is still logged above as usual, but doesn't open a second
-    // position on top of it (keeps P&L accounting simple and unambiguous).
-    if (!state.pairs[pair].openPosition) {
-      state.pairs[pair].openPosition = {
-        openedAt: timestamp,
-        pair,
-        direction,
-        convictionScore: diagnostic.convictionScore,
-        entryPrice: currentPrice,
-        quantity: qty,
-      };
-    }
+    state.pairs[pair].openPosition = {
+      openedAt: timestamp,
+      pair,
+      direction,
+      convictionScore: diagnostic.convictionScore,
+      entryPrice: currentPrice,
+      quantity: qty,
+    };
+  } else if (diagnostic.state !== 'FAULT' && alreadyOpen) {
+    // Signal still non-FAULT, but a position is already open for this pair —
+    // log the read for visibility without opening a second position or fee.
+    direction = diagnostic.direction;
   }
 
   const logRow = [
-    timestamp,
-    pair,
-    diagnostic.state,
-    diagnostic.convictionScore,
-    direction,
-    currentPrice.toFixed(2),
-    qty.toFixed(6),
-    balanceChange.toFixed(4),
-    state.balance.toFixed(4),
+    timestamp, pair, diagnostic.state, diagnostic.convictionScore, direction,
+    currentPrice.toFixed(2), qty.toFixed(6), balanceChange.toFixed(4), state.balance.toFixed(4),
     `"${diagnostic.reason.replace(/"/g, "'")}"`,
   ].join(',');
-
   fs.appendFileSync(CONFIG.LOG_FILE, logRow + '\n');
 
   state.pairs[pair].lastDecision = {
-    timestamp,
-    pair,
-    state: diagnostic.state,
-    convictionScore: diagnostic.convictionScore,
-    direction,
-    price: currentPrice,
-    quantity: qty,
-    balanceChange,
-    balanceAfter: state.balance,
-    reason: diagnostic.reason,
-    detail: diagnostic.detail,
+    timestamp, pair, state: diagnostic.state, convictionScore: diagnostic.convictionScore,
+    direction, price: currentPrice, quantity: qty, balanceChange, balanceAfter: state.balance,
+    reason: diagnostic.reason, detail: diagnostic.detail,
   };
   saveState(state);
 
   console.log(`[${timestamp}] ${pair} | ${diagnostic.state} | conviction ${diagnostic.convictionScore} | ${direction} | balance ${state.balance.toFixed(2)}`);
 }
 
-// ---------- P&L: closing positions after their hold window ----------
-// Runs independently of executeCycle. Checks every open position; if it's
-// been open at least POSITION_HOLD_MS, fetches the current price, computes
-// real realized gain/loss versus the entry price, writes it to the separate
-// closed_trades.csv file, and clears the open slot so a new one can open.
-// This never touches trades_log.csv or its format.
+// ---------- P&L: closing positions ----------
+// Runs independently of executeCycle. Checks every open position; closes
+// it if the hold window has passed OR the stop-loss has been breached,
+// whichever comes first. Writes to a separate file so trades_log.csv and
+// its parser are never touched by this.
 
 function calculateRealizedPnl(position, exitPrice) {
   const { direction, entryPrice, quantity } = position;
-  // Long profits when price rises, short profits when price falls.
   const priceDelta = direction === 'long' ? (exitPrice - entryPrice) : (entryPrice - exitPrice);
   return priceDelta * quantity;
 }
@@ -501,12 +393,9 @@ function calculateRealizedPnl(position, exitPrice) {
 let closingPositionsInProgress = false;
 
 async function closeExpiredPositions() {
-  // Guard against overlapping runs: this function is now triggered by two
-  // independent timers (the full signal cycle, and its own faster
-  // dedicated interval) plus once on startup. If a previous run is still
-  // mid-flight (e.g. waiting on a slow ticker fetch) when the next timer
-  // fires, skip this call rather than risk two runs racing to close the
-  // same position.
+  // Guards against two overlapping runs (startup check, the fast timer,
+  // and the slower full cycle all call this) racing to close the same
+  // position twice.
   if (closingPositionsInProgress) {
     console.log('Position check already in progress, skipping this trigger.');
     return;
@@ -521,27 +410,19 @@ async function closeExpiredPositions() {
       try {
         const ticker = await fetchTicker(pair);
         const currentPrice = parseFloat(ticker.lastPr || ticker.last);
+        const holdExpired = Date.now() - new Date(pos.openedAt).getTime() >= CONFIG.POSITION_HOLD_MS;
 
-        const openedAtMs = new Date(pos.openedAt).getTime();
-        const holdExpired = Date.now() - openedAtMs >= CONFIG.POSITION_HOLD_MS;
-
-        // Stop-loss: how far has price moved against this position, as a
-        // percentage of entry price? Checked every cycle, not just at the
-        // 1-hour mark, so a position doesn't ride a bad move blindly for
-        // the full hour once it's already clearly wrong.
         const adverseMovePct = pos.direction === 'long'
           ? (pos.entryPrice - currentPrice) / pos.entryPrice
           : (currentPrice - pos.entryPrice) / pos.entryPrice;
         const stopLossHit = adverseMovePct >= CONFIG.STOP_LOSS_PCT;
 
         if (holdExpired || stopLossHit) {
-          const closeReason = stopLossHit && !holdExpired ? 'stop-loss' : 'hold-expired';
-          closePosition(pair, pairState, pos, currentPrice, closeReason);
+          closePosition(pair, pairState, pos, currentPrice, stopLossHit && !holdExpired ? 'stop-loss' : 'hold-expired');
         }
       } catch (err) {
-        // If we can't fetch the current price this cycle, just leave the
-        // position open — it'll be retried next cycle. Never force-close
-        // on bad data, and never crash the loop over it.
+        // Leave the position open and retry next check rather than
+        // force-closing on bad data.
         console.warn(`Could not check/close position for ${pair} (will retry):`, err.message);
       }
     }
@@ -553,22 +434,13 @@ async function closeExpiredPositions() {
 function closePosition(pair, pairState, pos, exitPrice, closeReason) {
   const realizedPnl = calculateRealizedPnl(pos, exitPrice);
   const closedAt = new Date().toISOString();
-
   state.balance += realizedPnl;
 
   const row = [
-    pos.openedAt,
-    closedAt,
-    pair,
-    pos.direction,
-    pos.convictionScore,
-    pos.entryPrice.toFixed(2),
-    exitPrice.toFixed(2),
-    pos.quantity.toFixed(6),
-    realizedPnl.toFixed(4),
-    state.balance.toFixed(4),
+    pos.openedAt, closedAt, pair, pos.direction, pos.convictionScore,
+    pos.entryPrice.toFixed(2), exitPrice.toFixed(2), pos.quantity.toFixed(6),
+    realizedPnl.toFixed(4), state.balance.toFixed(4),
   ].join(',');
-
   fs.appendFileSync(CONFIG.PNL_LOG_FILE, row + '\n');
   console.log(`[${closedAt}] ${pair} | CLOSED (${closeReason}) ${pos.direction} | entry ${pos.entryPrice.toFixed(2)} -> exit ${exitPrice.toFixed(2)} | realized P&L ${realizedPnl.toFixed(4)}`);
 
@@ -594,25 +466,20 @@ async function runOnePair(pair) {
 
     let closes = pairState.priceHistory;
     if (closes.length < 15) {
-      // Bootstrap with real candle history on first runs so we don't wait
-      // hours to build up enough data per pair.
+      // Bootstrap with real candle history so we don't wait hours to build up data.
       try {
-        const candles = await fetchCandles(pair, 50);
-        closes = candles;
-        pairState.priceHistory = candles;
+        closes = await fetchCandles(pair, 50);
+        pairState.priceHistory = closes;
       } catch (e) {
         console.warn(`Candle bootstrap failed for ${pair}, continuing with live ticks only:`, e.message);
       }
     }
 
     const longShortRatio = await fetchLongShortRatio(pair);
-
     const diagnostic = runDiagnostic(closes, fundingRate, longShortRatio);
     executeCycle(pair, diagnostic, currentPrice);
   } catch (err) {
     console.error(`Cycle failed for ${pair}:`, err.message);
-    // Log the failure itself as a FAULT row so the log shows the agent
-    // handling its own data problems gracefully rather than going silent.
     const timestamp = new Date().toISOString();
     fs.appendFileSync(
       CONFIG.LOG_FILE,
@@ -631,22 +498,19 @@ async function runCycle() {
   saveState(state);
 }
 
-// ---------- Lightweight status API (for the dashboard) ----------
+// ---------- Status API ----------
 
 function readRecentLogRows(n = 50, pairFilter = null) {
   if (!fs.existsSync(CONFIG.LOG_FILE)) return [];
   const lines = fs.readFileSync(CONFIG.LOG_FILE, 'utf8').trim().split('\n');
   let rows = lines.slice(1).map((line) => {
-    // naive CSV parse — good enough since only the reason field has commas, and it's quoted
     const match = line.match(/^([^,]*),([^,]*),([^,]*),([^,]*),([^,]*),([^,]*),([^,]*),([^,]*),([^,]*),"(.*)"$/);
     if (!match) return null;
     const [, timestamp, pair, st, conviction, direction, price, qty, balChange, balAfter, reason] = match;
     return {
-      timestamp, pair, state: st,
-      convictionScore: Number(conviction), direction,
+      timestamp, pair, state: st, convictionScore: Number(conviction), direction,
       price: Number(price), quantity: Number(qty),
-      balanceChange: Number(balChange), balanceAfter: Number(balAfter),
-      reason,
+      balanceChange: Number(balChange), balanceAfter: Number(balAfter), reason,
     };
   }).filter(Boolean);
 
@@ -662,11 +526,9 @@ function readClosedTrades(n = 100, pairFilter = null) {
     if (parts.length !== 10) return null;
     const [openedAt, closedAt, pair, direction, conviction, entryPrice, exitPrice, qty, pnl, balAfter] = parts;
     return {
-      openedAt, closedAt, pair, direction,
-      convictionScore: Number(conviction),
+      openedAt, closedAt, pair, direction, convictionScore: Number(conviction),
       entryPrice: Number(entryPrice), exitPrice: Number(exitPrice),
-      quantity: Number(qty), realizedPnl: Number(pnl),
-      balanceAfter: Number(balAfter),
+      quantity: Number(qty), realizedPnl: Number(pnl), balanceAfter: Number(balAfter),
     };
   }).filter(Boolean);
 
@@ -676,25 +538,21 @@ function readClosedTrades(n = 100, pairFilter = null) {
 
 function buildStatusPayload() {
   const pairs = {};
-  CONFIG.PAIRS.forEach((p) => {
-    pairs[p] = state.pairs[p].lastDecision;
-  });
-  // Convenience: the single most recent decision across all pairs, for
-  // quick-glance UI and for the chat explainer's "last trade" answers.
+  CONFIG.PAIRS.forEach((p) => { pairs[p] = state.pairs[p].lastDecision; });
+
   let mostRecent = null;
   CONFIG.PAIRS.forEach((p) => {
     const d = state.pairs[p].lastDecision;
-    if (d && (!mostRecent || new Date(d.timestamp) > new Date(mostRecent.timestamp))) {
-      mostRecent = d;
-    }
+    if (d && (!mostRecent || new Date(d.timestamp) > new Date(mostRecent.timestamp))) mostRecent = d;
   });
+
   return {
     pairs: CONFIG.PAIRS,
     balance: state.balance,
     startingBalance: CONFIG.STARTING_BALANCE,
     cyclesRun: state.cyclesRun,
     lastDecisionByPair: pairs,
-    lastDecision: mostRecent, // backward-compatible field, most recent across all pairs
+    lastDecision: mostRecent,
     openPositionCount: CONFIG.PAIRS.filter((p) => state.pairs[p].openPosition).length,
   };
 }
@@ -722,11 +580,7 @@ const server = http.createServer((req, res) => {
     req.on('data', (chunk) => { body += chunk; });
     req.on('end', () => {
       let question = '';
-      try {
-        question = JSON.parse(body).question || '';
-      } catch (e) {
-        // ignore malformed body, fall through with empty question
-      }
+      try { question = JSON.parse(body).question || ''; } catch (_) { /* malformed body, fall through */ }
       const statusPayload = buildStatusPayload();
       const recentLog = readRecentLogRows(200);
       const closedTrades = readClosedTrades(200);
@@ -759,13 +613,12 @@ const server = http.createServer((req, res) => {
     const n = parseInt(url.searchParams.get('n') || '100', 10);
     const pairFilter = url.searchParams.get('pair') || null;
     const closed = readClosedTrades(n, pairFilter);
-    const totalRealized = closed.reduce((sum, r) => sum + r.realizedPnl, 0);
     const wins = closed.filter((r) => r.realizedPnl > 0).length;
     const losses = closed.filter((r) => r.realizedPnl < 0).length;
     res.writeHead(200, { 'Content-Type': 'application/json', ...corsHeaders() });
     return res.end(JSON.stringify({
       closedTrades: closed,
-      totalRealizedPnl: totalRealized,
+      totalRealizedPnl: closed.reduce((sum, r) => sum + r.realizedPnl, 0),
       wins,
       losses,
       winRate: closed.length ? Math.round((wins / closed.length) * 100) : 0,
@@ -789,7 +642,7 @@ const server = http.createServer((req, res) => {
   res.end('Not found. Try /status or /log');
 });
 
-// ---------- Start the loop ----------
+// ---------- Startup ----------
 
 async function startAgent() {
   console.log('Continuity agent starting.');
@@ -797,11 +650,6 @@ async function startAgent() {
 
   if (CONFIG.GITHUB_TOKEN && CONFIG.GITHUB_REPO) {
     console.log(`GitHub backup sync enabled -> ${CONFIG.GITHUB_REPO} (every ${CONFIG.GITHUB_SYNC_INTERVAL_MS / 60000} min)`);
-    // If this container has no local state.json (e.g. a fresh Railway
-    // rebuild wiped the filesystem), try to recover the last known state
-    // — including any open positions — from GitHub before falling back to
-    // a brand-new balance. This is what makes open positions survive a
-    // redeploy instead of silently resetting their 1-hour hold clock.
     if (!fs.existsSync(CONFIG.STATE_FILE)) {
       await pullFileFromGitHub('agent/data/state.json', CONFIG.STATE_FILE);
     }
@@ -815,14 +663,9 @@ async function startAgent() {
     console.log(`Continuity status API listening on port ${CONFIG.PORT}`);
   });
 
-  // Check open positions immediately on startup, before the first full
-  // signal sweep. Railway can restart this container at any time (a
-  // redeploy, a crash, a host-side hiccup) — when that happens, any
-  // position that was already past its stop-loss or hold window sits
-  // unchecked until the agent comes back. Checking positions first, before
-  // the ~20-second signal sweep across all 9 pairs even starts, means a
-  // restart never adds materially more delay on top of however long the
-  // container was actually down.
+  // Check any open positions immediately on startup, before the slower
+  // full signal sweep — a restart should never add delay on top of
+  // however long the container was actually down.
   const openCount = CONFIG.PAIRS.filter((p) => state.pairs[p] && state.pairs[p].openPosition).length;
   if (openCount > 0) {
     console.log(`Startup: ${openCount} open position(s) found — checking immediately before first cycle.`);
@@ -832,12 +675,9 @@ async function startAgent() {
   runCycle();
   setInterval(runCycle, CONFIG.CHECK_INTERVAL_MS);
   setInterval(syncToGitHub, CONFIG.GITHUB_SYNC_INTERVAL_MS);
-  // Position checks (hold-expiry and stop-loss) run on their own faster
-  // interval, separate from the full signal sweep. The signal sweep across
-  // 9 pairs takes time (deliberate stagger delay between pairs), so tying
-  // stop-loss checks only to that cadence means a position breaching its
-  // stop-loss could sit unchecked for up to CHECK_INTERVAL_MS. Checking
-  // positions on their own shorter timer closes that gap.
+  // Stop-loss checks run on their own faster timer, independent of the
+  // slower full signal sweep, so a breach doesn't sit unnoticed for up
+  // to CHECK_INTERVAL_MS.
   setInterval(closeExpiredPositions, CONFIG.POSITION_CHECK_INTERVAL_MS);
 }
 
