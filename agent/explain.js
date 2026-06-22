@@ -1,15 +1,10 @@
 /**
  * explain.js — the "ask Continuity" feature.
  *
- * This is intentionally READ-ONLY. It answers questions about the agent's
- * own state and reasoning (using its real log + last decision data), but
- * it has no mechanism to place, cancel, or alter trades. The autonomy of
- * the trading loop in agent.js is never touched by this endpoint — keeping
- * the agent's decisions genuinely its own, not user-directed.
- *
- * It uses simple rule-based answers grounded in real state data — no
- * external LLM call required, so the explanations are always accurate to
- * what the agent actually did (no hallucinated trades).
+ * READ-ONLY by design. Answers questions about the agent's own state and
+ * reasoning, grounded in real log/decision data — it has no mechanism to
+ * place, cancel, or alter trades. Rule-based, not an LLM call, so answers
+ * are always accurate to what the agent actually did.
  *
  * status shape expected:
  * {
@@ -23,7 +18,7 @@
 function detectPairMention(question, knownPairs) {
   const q = question.toUpperCase();
   for (const pair of knownPairs) {
-    const base = pair.replace('USDT', ''); // e.g. BTC, ETH, SOL
+    const base = pair.replace('USDT', '');
     if (q.includes(base)) return pair;
   }
   return null;
@@ -87,6 +82,10 @@ function buildExplanation(question, status, recentLog, pnlSummary) {
     return describeDecision(last);
   }
 
+  if (q.includes('stop') && q.includes('loss')) {
+    return `Every open position is checked against its entry price as often as every few minutes. If it moves 2% against me before the one-hour hold window ends, I close it early rather than ride out a bad call — that's a stop-loss, and it runs independently of the normal diagnostic cycle.`;
+  }
+
   if (q.includes('balance') || q.includes('p&l') || q.includes('profit') || q.includes('pnl')) {
     const change = status.balance - status.startingBalance;
     const pct = (change / status.startingBalance) * 100;
@@ -95,7 +94,7 @@ function buildExplanation(question, status, recentLog, pnlSummary) {
       const winRate = Math.round((pnlSummary.wins / pnlSummary.closedCount) * 100);
       answer += ` Of that, $${pnlSummary.totalRealizedPnl.toFixed(2)} comes from ${pnlSummary.closedCount} closed positions that played out against real price movement — ${pnlSummary.wins} won, ${pnlSummary.losses} lost (${winRate}% win rate). The rest of the balance change is from trading fees.`;
     } else if (pnlSummary) {
-      answer += ` No positions have closed yet to score against real price movement — each position is held for an hour before I check whether it actually worked out.`;
+      answer += ` No positions have closed yet to score against real price movement — each position is held for up to an hour before I check whether it actually worked out.`;
     }
     return answer;
   }
@@ -109,18 +108,17 @@ function buildExplanation(question, status, recentLog, pnlSummary) {
   }
 
   if (q.includes('strategy') || q.includes('how do you') || q.includes('what are you')) {
-    return `I run a diagnostic on three signals — price trend, volatility, and positioning sentiment — every cycle, across ${knownPairs.length} pairs (${knownPairs.join(', ')}). When they agree strongly on a pair, I take a full-size paper position on it. When they partially agree, I take a smaller one. When they contradict or noise is too high, I refuse to trade that pair and log why. I never override this with manual input — that's the whole point.`;
+    return `I run a diagnostic on three signals — price trend, volatility, and positioning sentiment — every cycle, across ${knownPairs.length} pairs (${knownPairs.join(', ')}). When they agree strongly on a pair, I take a full-size paper position on it. When they partially agree, I take a smaller one. When they contradict or noise is too high, I refuse to trade that pair and log why. Once a position is open, it's held for up to an hour but closes early if it moves 2% against me — a stop-loss. I never override any of this with manual input — that's the whole point.`;
   }
 
   if (q.includes('can i') && (q.includes('tell you') || q.includes('control') || q.includes('force') || q.includes('override'))) {
     return `No — I don't take instructions on what to trade. I only report on my own diagnostic state. That separation is intentional: an agent that can be talked into a trade isn't really autonomous.`;
   }
 
-  // Default fallback — still grounded in real data, not generic
   if (last) {
-    return `My last cycle on ${last.pair}: ${last.state} at conviction ${last.convictionScore}/100. ${last.reason} Ask me about a specific coin, my conviction score, last trade, balance, or strategy for more detail.`;
+    return `My last cycle on ${last.pair}: ${last.state} at conviction ${last.convictionScore}/100. ${last.reason} Ask me about a specific coin, my conviction score, last trade, balance, strategy, or stop-loss for more detail.`;
   }
-  return `Ask me about a specific coin (e.g. "why didn't you trade ETH"), my conviction scores, last trades, balance, or strategy.`;
+  return `Ask me about a specific coin (e.g. "why didn't you trade ETH"), my conviction scores, last trades, balance, strategy, or stop-loss.`;
 }
 
 module.exports = { buildExplanation };
