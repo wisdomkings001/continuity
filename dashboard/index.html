@@ -710,11 +710,6 @@
 
   .pair-card:hover { background: var(--bg-panel-raised); }
 
-  .pair-card.active {
-    background: var(--bg-panel-raised);
-    border-left-color: var(--healthy);
-  }
-
   .pair-card .pc-top {
     display: flex;
     justify-content: space-between;
@@ -988,7 +983,7 @@
   </div>
 
   <div class="thesis-note">
-    <strong>How this works:</strong> Continuity runs a diagnostic every cycle across trend, volatility, and positioning sentiment — independently for each of nine pairs. When signals agree strongly on a pair, it takes a full-size paper position on that pair. When they partially agree, it sizes down. When they contradict or the data is too noisy to read cleanly, it logs a <strong>fault</strong> for that pair and refuses to trade it rather than force a guess. No real funds are used — every position is simulated, and one shared paper balance is tracked across all pairs.
+    <strong>How this works:</strong> Continuity runs a diagnostic every cycle across trend, volatility, and positioning sentiment — independently for each of nine pairs. When signals agree strongly on a pair, it takes a full-size paper position on that pair. When they partially agree, it sizes down. When they contradict or the data is too noisy to read cleanly, it logs a <strong>fault</strong> for that pair and refuses to trade it rather than force a guess. Once a position opens, it's held for up to an hour and closed early if it moves 2% against entry — a stop-loss. No real funds are used — every position is simulated, and one shared paper balance is tracked across all pairs.
   </div>
 
   <footer>
@@ -1063,10 +1058,7 @@
     const decisions = pairs.map((p) => status.lastDecisionByPair[p]).filter(Boolean);
 
     const balance = status.balance ?? status.startingBalance ?? 10000;
-    // Balance and fees are informational context, not a verdict — always
-    // neutral-colored, never green/red. The actual "is the strategy
-    // working" answer lives in Realized P&L (see renderTopPnl), which is
-    // fetched separately since it comes from /pnl, not /status.
+    // Balance/fees are informational, always neutral — the real verdict is Realized P&L (renderTopPnl), fetched separately from /pnl.
     el('balanceAndFeesSub').textContent = 'balance ' + fmtMoney(balance);
 
     el('diagnosedCount').textContent = decisions.filter((d) => d.state === 'DIAGNOSED').length;
@@ -1095,10 +1087,7 @@
       el('realizedPnlValue').textContent = fmtMoney(total);
       el('realizedPnlValue').className = 'value ' + (Math.abs(total) < 0.0001 ? '' : (total > 0 ? 'up' : 'down'));
 
-      // Total fees aren't returned directly by /pnl (which only covers
-      // closed positions), so we estimate them as the gap between the
-      // account's net balance change and realized P&L from closed trades.
-      // This is informational, always neutral-colored regardless of sign.
+      // /pnl only covers closed positions, so fees are estimated as the gap between net balance change and realized P&L. Always neutral-colored.
       if (lastStatus) {
         const balance = lastStatus.balance ?? lastStatus.startingBalance ?? 10000;
         const netChange = balance - (lastStatus.startingBalance || 10000);
@@ -1273,8 +1262,9 @@
     el('bdLong').textContent = longs;
     el('bdShort').textContent = shorts;
     el('bdAvgConviction').textContent = avgConviction;
+    // Fee drag is a cost, not a verdict on performance — always neutral,
+    // never colored red/green (same rule applied to the top-level summary).
     el('bdNetImpact').textContent = fmtMoney(netImpact);
-    el('bdNetImpact').style.color = netImpact >= 0 ? 'var(--healthy)' : 'var(--fault)';
   }
 
   function renderLog(rows) {
