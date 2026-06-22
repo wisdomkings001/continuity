@@ -49,6 +49,7 @@ const CONFIG = {
   // the original trades_log.csv format and parser are never touched.
   POSITION_HOLD_MS: 60 * 60 * 1000, // 1 hour
   STOP_LOSS_PCT: 0.02, // close early if a position moves 2% against entry before the hold window ends
+  POSITION_CHECK_INTERVAL_MS: 3 * 60 * 1000, // check open positions for stop-loss/expiry every 3 minutes, independent of the slower full signal sweep
   PNL_LOG_FILE: path.join(__dirname, 'data', 'closed_trades.csv'),
 };
 
@@ -497,38 +498,55 @@ function calculateRealizedPnl(position, exitPrice) {
   return priceDelta * quantity;
 }
 
+let closingPositionsInProgress = false;
+
 async function closeExpiredPositions() {
-  for (const pair of CONFIG.PAIRS) {
-    const pairState = state.pairs[pair];
-    const pos = pairState.openPosition;
-    if (!pos) continue;
+  // Guard against overlapping runs: this function is now triggered by two
+  // independent timers (the full signal cycle, and its own faster
+  // dedicated interval) plus once on startup. If a previous run is still
+  // mid-flight (e.g. waiting on a slow ticker fetch) when the next timer
+  // fires, skip this call rather than risk two runs racing to close the
+  // same position.
+  if (closingPositionsInProgress) {
+    console.log('Position check already in progress, skipping this trigger.');
+    return;
+  }
+  closingPositionsInProgress = true;
+  try {
+    for (const pair of CONFIG.PAIRS) {
+      const pairState = state.pairs[pair];
+      const pos = pairState.openPosition;
+      if (!pos) continue;
 
-    try {
-      const ticker = await fetchTicker(pair);
-      const currentPrice = parseFloat(ticker.lastPr || ticker.last);
+      try {
+        const ticker = await fetchTicker(pair);
+        const currentPrice = parseFloat(ticker.lastPr || ticker.last);
 
-      const openedAtMs = new Date(pos.openedAt).getTime();
-      const holdExpired = Date.now() - openedAtMs >= CONFIG.POSITION_HOLD_MS;
+        const openedAtMs = new Date(pos.openedAt).getTime();
+        const holdExpired = Date.now() - openedAtMs >= CONFIG.POSITION_HOLD_MS;
 
-      // Stop-loss: how far has price moved against this position, as a
-      // percentage of entry price? Checked every cycle, not just at the
-      // 1-hour mark, so a position doesn't ride a bad move blindly for
-      // the full hour once it's already clearly wrong.
-      const adverseMovePct = pos.direction === 'long'
-        ? (pos.entryPrice - currentPrice) / pos.entryPrice
-        : (currentPrice - pos.entryPrice) / pos.entryPrice;
-      const stopLossHit = adverseMovePct >= CONFIG.STOP_LOSS_PCT;
+        // Stop-loss: how far has price moved against this position, as a
+        // percentage of entry price? Checked every cycle, not just at the
+        // 1-hour mark, so a position doesn't ride a bad move blindly for
+        // the full hour once it's already clearly wrong.
+        const adverseMovePct = pos.direction === 'long'
+          ? (pos.entryPrice - currentPrice) / pos.entryPrice
+          : (currentPrice - pos.entryPrice) / pos.entryPrice;
+        const stopLossHit = adverseMovePct >= CONFIG.STOP_LOSS_PCT;
 
-      if (holdExpired || stopLossHit) {
-        const closeReason = stopLossHit && !holdExpired ? 'stop-loss' : 'hold-expired';
-        closePosition(pair, pairState, pos, currentPrice, closeReason);
+        if (holdExpired || stopLossHit) {
+          const closeReason = stopLossHit && !holdExpired ? 'stop-loss' : 'hold-expired';
+          closePosition(pair, pairState, pos, currentPrice, closeReason);
+        }
+      } catch (err) {
+        // If we can't fetch the current price this cycle, just leave the
+        // position open — it'll be retried next cycle. Never force-close
+        // on bad data, and never crash the loop over it.
+        console.warn(`Could not check/close position for ${pair} (will retry):`, err.message);
       }
-    } catch (err) {
-      // If we can't fetch the current price this cycle, just leave the
-      // position open — it'll be retried next cycle. Never force-close
-      // on bad data, and never crash the loop over it.
-      console.warn(`Could not check/close position for ${pair} (will retry):`, err.message);
     }
+  } finally {
+    closingPositionsInProgress = false;
   }
 }
 
@@ -797,9 +815,30 @@ async function startAgent() {
     console.log(`Continuity status API listening on port ${CONFIG.PORT}`);
   });
 
+  // Check open positions immediately on startup, before the first full
+  // signal sweep. Railway can restart this container at any time (a
+  // redeploy, a crash, a host-side hiccup) — when that happens, any
+  // position that was already past its stop-loss or hold window sits
+  // unchecked until the agent comes back. Checking positions first, before
+  // the ~20-second signal sweep across all 9 pairs even starts, means a
+  // restart never adds materially more delay on top of however long the
+  // container was actually down.
+  const openCount = CONFIG.PAIRS.filter((p) => state.pairs[p] && state.pairs[p].openPosition).length;
+  if (openCount > 0) {
+    console.log(`Startup: ${openCount} open position(s) found — checking immediately before first cycle.`);
+    await closeExpiredPositions();
+  }
+
   runCycle();
   setInterval(runCycle, CONFIG.CHECK_INTERVAL_MS);
   setInterval(syncToGitHub, CONFIG.GITHUB_SYNC_INTERVAL_MS);
+  // Position checks (hold-expiry and stop-loss) run on their own faster
+  // interval, separate from the full signal sweep. The signal sweep across
+  // 9 pairs takes time (deliberate stagger delay between pairs), so tying
+  // stop-loss checks only to that cadence means a position breaching its
+  // stop-loss could sit unchecked for up to CHECK_INTERVAL_MS. Checking
+  // positions on their own shorter timer closes that gap.
+  setInterval(closeExpiredPositions, CONFIG.POSITION_CHECK_INTERVAL_MS);
 }
 
 startAgent();
