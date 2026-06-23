@@ -116,12 +116,6 @@ Open `dashboard/index.html` directly — no server needed. First load asks for t
 - Hourly GitHub backup of logs and full state, with automatic restore on a fresh container
 - Live dashboard: overview grid, per-pair detail with a conviction chart and closed-trade history, a recent-activity digest, and a read-only chat that explains real decisions — including the stop-loss — without taking instructions
 
-## What's not built yet
-
-- Only one position per pair at a time — high conviction held across several cycles doesn't add to an already-open position
-- Sentiment uses funding rate and long/short ratio only; on-chain flow or news sentiment would be a natural next signal
-- The nine pairs are fixed at startup; letting the agent propose adding or dropping a pair based on data quality is a natural extension
-
 ## Tools used
 
 - Bitget public market data API (`ticker`, `candles`, `long-short`) — no trading permission needed or used
