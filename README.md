@@ -5,7 +5,8 @@ An autonomous diagnostic trading agent built for **Bitget AI Base Camp Hackathon
 Paper trading only. No real funds are used at any point.
 
 **Live dashboard:** https://wisdomkings001.github.io/continuity/dashboard/index.html
-**Agent source:** https://github.com/wisdomkings001/continuity
+**Agent endpoint:** https://continuity-production-ce7d.up.railway.app
+**Source code:** https://github.com/wisdomkings001/continuity
 
 ## The idea
 
