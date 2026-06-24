@@ -2,17 +2,8 @@
  * explain.js — the "ask Continuity" feature.
  *
  * READ-ONLY by design. Answers questions about the agent's own state and
- * reasoning, grounded in real log/decision data — it has no mechanism to
- * place, cancel, or alter trades. Rule-based, not an LLM call, so answers
- * are always accurate to what the agent actually did.
- *
- * status shape expected:
- * {
- *   pairs: ['BTCUSDT', 'ETHUSDT', ...],
- *   balance, startingBalance, cyclesRun,
- *   lastDecisionByPair: { BTCUSDT: {...}, ETHUSDT: {...}, ... },
- *   lastDecision: {...}  // most recent across all pairs
- * }
+ * reasoning, grounded in real log/decision data. No LLM, no guessing,
+ * no mechanism to place, cancel, or alter trades.
  */
 
 function detectPairMention(question, knownPairs) {
@@ -32,6 +23,10 @@ function describeDecision(d) {
   return `On ${d.pair}: ${d.direction.toUpperCase()} at $${Number(d.price).toFixed(2)}, size ${Number(d.quantity).toFixed(6)}. State: ${d.state}, conviction ${d.convictionScore}/100. Balance after: $${Number(d.balanceAfter).toFixed(2)}.`;
 }
 
+function todayDateString() {
+  return new Date().toISOString().slice(0, 10);
+}
+
 function buildExplanation(question, status, recentLog, pnlSummary) {
   const q = question.toLowerCase();
   const knownPairs = status.pairs || [];
@@ -42,6 +37,7 @@ function buildExplanation(question, status, recentLog, pnlSummary) {
     return "I haven't completed a diagnostic cycle yet. Check back in a few minutes.";
   }
 
+  // All-pairs overview
   if (q.includes('all') && (q.includes('pair') || q.includes('coin') || q.includes('overview') || q.includes('everything'))) {
     const lines = knownPairs.map((p) => {
       const d = status.lastDecisionByPair[p];
@@ -51,7 +47,39 @@ function buildExplanation(question, status, recentLog, pnlSummary) {
     return `Current read across all ${knownPairs.length} pairs — ${lines.join(' | ')}`;
   }
 
-  if (q.includes('why') && (q.includes('sit out') || q.includes('hold') || q.includes('not trad') || q.includes('refuse'))) {
+  // How long running
+  if ((q.includes('how long') || q.includes('how many cycle') || q.includes('uptime') || q.includes('running for')) && !q.includes('trade')) {
+    const minutes = status.cyclesRun * 15;
+    const hours = Math.floor(minutes / 60);
+    const days = Math.floor(hours / 24);
+    const remainingHours = hours % 24;
+    const remainingMins = minutes % 60;
+    let duration = '';
+    if (days > 0) duration = `${days} day${days > 1 ? 's' : ''} and ${remainingHours} hour${remainingHours !== 1 ? 's' : ''}`;
+    else if (hours > 0) duration = `${hours} hour${hours !== 1 ? 's' : ''} and ${remainingMins} minute${remainingMins !== 1 ? 's' : ''}`;
+    else duration = `about ${minutes} minute${minutes !== 1 ? 's' : ''}`;
+    return `I've been running for approximately ${duration}, completing ${status.cyclesRun} diagnostic cycles across ${knownPairs.length} pairs.`;
+  }
+
+  // Today's P&L
+  if ((q.includes('today') || q.includes('this session') || q.includes('so far')) &&
+      (q.includes('p&l') || q.includes('pnl') || q.includes('profit') || q.includes('make') || q.includes('earn') || q.includes('performance') || q.includes('loss'))) {
+    if (!pnlSummary || !pnlSummary.closedTrades || pnlSummary.closedTrades.length === 0) {
+      return "No positions have closed today yet. Each position is held up to one hour before I score it against the real price.";
+    }
+    const today = todayDateString();
+    const todayTrades = pnlSummary.closedTrades.filter(t => t.closedAt && t.closedAt.slice(0, 10) === today);
+    if (todayTrades.length === 0) {
+      return "No positions have closed today yet. Positions from earlier days are in the full history.";
+    }
+    const todayPnl = todayTrades.reduce((sum, t) => sum + t.realizedPnl, 0);
+    const wins = todayTrades.filter(t => t.realizedPnl > 0).length;
+    const losses = todayTrades.filter(t => t.realizedPnl < 0).length;
+    return `Today: ${todayTrades.length} positions closed, ${wins} won, ${losses} lost — net realized P&L ${todayPnl >= 0 ? '+' : ''}$${todayPnl.toFixed(2)}.`;
+  }
+
+  // Why didn't you trade
+  if (q.includes('why') && (q.includes('sit out') || q.includes('sitting out') || q.includes('hold') || q.includes('not trad') || q.includes('refuse') || q.includes('trade'))) {
     if (!last) return "I don't have a decision for that pair yet.";
     if (last.state === 'FAULT') {
       return `My last cycle on ${last.pair} came back FAULT. ${last.reason} I don't take a position when conviction is below 30/100 — forcing a trade on contradictory data is how most bots lose money.`;
@@ -62,6 +90,18 @@ function buildExplanation(question, status, recentLog, pnlSummary) {
     return `Actually, my last cycle on ${last.pair} was DIAGNOSED with conviction ${last.convictionScore}/100, so I did take a full-size position, not sit out.`;
   }
 
+  // Worst / lowest conviction coin — checked before best to avoid matching "best" first
+  if (q.includes('which') && (q.includes('coin') || q.includes('pair')) && (q.includes('worst') || q.includes('low') || q.includes('weak') || q.includes('bad'))) {
+    let worst = null;
+    knownPairs.forEach((p) => {
+      const d = status.lastDecisionByPair[p];
+      if (d && (!worst || d.convictionScore < worst.convictionScore)) worst = d;
+    });
+    if (!worst) return "I don't have enough data across pairs yet to compare.";
+    return `Right now ${worst.pair} has the lowest conviction at ${worst.convictionScore}/100, state ${worst.state}. ${worst.reason}`;
+  }
+
+  // Best / highest conviction coin
   if (q.includes('which') && (q.includes('coin') || q.includes('pair')) && (q.includes('best') || q.includes('strong') || q.includes('high'))) {
     let best = null;
     knownPairs.forEach((p) => {
@@ -72,33 +112,38 @@ function buildExplanation(question, status, recentLog, pnlSummary) {
     return `Right now ${best.pair} has the highest conviction at ${best.convictionScore}/100, state ${best.state}.`;
   }
 
+  // Conviction / confidence
   if (q.includes('conviction') || q.includes('confiden') || q.includes('score')) {
     if (!last) return "I don't have a conviction score for that pair yet.";
     return `My current conviction score on ${last.pair} is ${last.convictionScore}/100, classified as ${last.state}. ${last.reason}`;
   }
 
+  // Last trade / decision
   if (q.includes('last trade') || q.includes('last decision') || q.includes('what did you do')) {
     if (!last) return "I haven't made a decision on that pair yet.";
     return describeDecision(last);
   }
 
+  // Stop-loss
   if (q.includes('stop') && q.includes('loss')) {
-    return `Every open position is checked against its entry price as often as every few minutes. If it moves 2% against me before the one-hour hold window ends, I close it early rather than ride out a bad call — that's a stop-loss, and it runs independently of the normal diagnostic cycle.`;
+    return `Every open position is checked every few minutes against its entry price, on its own independent timer separate from the main diagnostic cycle. If price moves 2% against the entry before the one-hour hold window ends, I close it immediately rather than ride out a bad call. This also fires instantly on every startup, so a container restart never leaves an overdue position waiting through a full cycle before it gets checked.`;
   }
 
-  if (q.includes('balance') || q.includes('p&l') || q.includes('profit') || q.includes('pnl')) {
+  // Balance / P&L / profit
+  if (q.includes('balance') || q.includes('p&l') || q.includes('profit') || q.includes('pnl') || q.includes('earn') || q.includes('loss')) {
     const change = status.balance - status.startingBalance;
     const pct = (change / status.startingBalance) * 100;
-    let answer = `Current paper balance: $${status.balance.toFixed(2)}, starting from $${status.startingBalance.toFixed(2)}. That's a ${change >= 0 ? 'gain' : 'loss'} of $${Math.abs(change).toFixed(2)} (${pct.toFixed(2)}%) since I started, across ${status.cyclesRun} diagnostic cycles covering ${knownPairs.length} pairs.`;
+    let answer = `Current paper balance: $${status.balance.toFixed(2)}, starting from $${status.startingBalance.toFixed(2)}. That's a ${change >= 0 ? 'gain' : 'loss'} of $${Math.abs(change).toFixed(2)} (${Math.abs(pct).toFixed(2)}%) since I started, across ${status.cyclesRun} cycles covering ${knownPairs.length} pairs.`;
     if (pnlSummary && pnlSummary.closedCount > 0) {
       const winRate = Math.round((pnlSummary.wins / pnlSummary.closedCount) * 100);
-      answer += ` Of that, $${pnlSummary.totalRealizedPnl.toFixed(2)} comes from ${pnlSummary.closedCount} closed positions that played out against real price movement — ${pnlSummary.wins} won, ${pnlSummary.losses} lost (${winRate}% win rate). The rest of the balance change is from trading fees.`;
+      answer += ` Of that, $${pnlSummary.totalRealizedPnl.toFixed(2)} is realized P&L from ${pnlSummary.closedCount} positions scored against real price movement — ${pnlSummary.wins} won, ${pnlSummary.losses} lost (${winRate}% win rate). The remainder is trading fees.`;
     } else if (pnlSummary) {
-      answer += ` No positions have closed yet to score against real price movement — each position is held for up to an hour before I check whether it actually worked out.`;
+      answer += ` No positions have closed yet to score against real price movement — each is held up to one hour before I check whether it actually worked out.`;
     }
     return answer;
   }
 
+  // How many trades
   if (q.includes('how many') && q.includes('trade')) {
     const relevant = mentionedPair ? recentLog.filter((r) => r.pair === mentionedPair) : recentLog;
     const traded = relevant.filter((r) => r.state !== 'FAULT').length;
@@ -107,18 +152,28 @@ function buildExplanation(question, status, recentLog, pnlSummary) {
     return `Out of my last ${relevant.length} cycles ${scope}, I acted on ${traded} and refused to trade on ${refused} due to low conviction.`;
   }
 
-  if (q.includes('strategy') || q.includes('how do you') || q.includes('what are you')) {
-    return `I run a diagnostic on three signals — price trend, volatility, and positioning sentiment — every cycle, across ${knownPairs.length} pairs (${knownPairs.join(', ')}). When they agree strongly on a pair, I take a full-size paper position on it. When they partially agree, I take a smaller one. When they contradict or noise is too high, I refuse to trade that pair and log why. Once a position is open, it's held for up to an hour but closes early if it moves 2% against me — a stop-loss. I never override any of this with manual input — that's the whole point.`;
+  // Strategy — now includes the sentiment fix
+  if (q.includes('strategy') || q.includes('how do you') || q.includes('what are you') || q.includes('how does') || q.includes('explain yourself')) {
+    return `I run a three-signal diagnostic every cycle across ${knownPairs.length} pairs (${knownPairs.join(', ')}): price trend over the last 10 candles, recent volatility, and crowd positioning from funding rate and long/short ratio. One key detail on sentiment: crypto is structurally long-biased, so mild long-skew means nothing — I only count genuinely extreme positioning, and I treat it as a contrarian warning, not confirmation. When signals agree strongly I take a full-size position; when they partially agree I take a smaller one; when they contradict or noise is too high I refuse and log why. Positions are held up to one hour with a 2% stop-loss that closes them early if the move goes against me. No manual override, ever.`;
   }
 
+  // Can I control
   if (q.includes('can i') && (q.includes('tell you') || q.includes('control') || q.includes('force') || q.includes('override'))) {
     return `No — I don't take instructions on what to trade. I only report on my own diagnostic state. That separation is intentional: an agent that can be talked into a trade isn't really autonomous.`;
   }
 
-  if (last) {
-    return `My last cycle on ${last.pair}: ${last.state} at conviction ${last.convictionScore}/100. ${last.reason} Ask me about a specific coin, my conviction score, last trade, balance, strategy, or stop-loss for more detail.`;
+  // Generic fallback — uses real data instead of a static prompt
+  let best = null;
+  knownPairs.forEach((p) => {
+    const d = status.lastDecisionByPair[p];
+    if (d && (!best || d.convictionScore > best.convictionScore)) best = d;
+  });
+
+  if (best) {
+    return `My highest conviction right now is ${best.pair} at ${best.convictionScore}/100 (${best.state}${best.state !== 'FAULT' ? ', ' + best.direction.toUpperCase() : ''}).`;
   }
-  return `Ask me about a specific coin (e.g. "why didn't you trade ETH"), my conviction scores, last trades, balance, strategy, or stop-loss.`;
+
+  return "I didn't catch that. Try asking about a specific coin, balance, today's P&L, strategy, or stop-loss.";
 }
 
 module.exports = { buildExplanation };
