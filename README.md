@@ -120,7 +120,8 @@ Everything lives in `CONFIG` at the top of `agent.js` — pairs, interval, start
 
 ### Viewing the dashboard
 
-Open `dashboard/index.html` directly — no server needed. First load asks for the agent's URL (your Railway domain, or `http://localhost:3000` locally); ![it's remembered after that.](screenshots/first dashboard.png)
+Open `dashboard/index.html` directly — no server needed. First load asks for the agent's URL (your Railway domain, or `http://localhost:3000` locally); ![it's remembered after that(screenshots/first dashboard.png)]
+
 ---
 
 ## Deploying to Railway
