@@ -56,7 +56,7 @@ After running for a while, the closed-trade log showed every single position goi
 
 The fix only treats genuinely extreme positioning as a signal, and reads it as contrarian. It was tested against the exact real trades that exposed the bug before being deployed — this is the kind of issue that only shows up once an agent runs with real, money-shaped consequences, not something a backtest alone would surface.
 
-![Ask Continuity — explains its own decisions in plain language](screenshots/chat.png)
+![Ask Continuity — explains its own decisions in plain language](screenshots/chat.jepg)
 
 ---
 
