@@ -7,6 +7,7 @@ Paper trading only. No real funds are used at any point.
 **Live dashboard:** https://wisdomkings001.github.io/continuity/dashboard/index.html
 
 **Agent endpoint:** https://continuity-production-ce7d.up.railway.app
+
 ---
 
 ## The idea
