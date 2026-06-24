@@ -911,10 +911,12 @@
 
   .detail-header .back-link {
     font-family: var(--mono);
-    font-size: 11.5px;
-    color: var(--text-dim);
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--healthy);
     cursor: pointer;
     text-decoration: none;
+    letter-spacing: 0.03em;
   }
 
   .detail-header .back-link:hover { color: var(--healthy); }
@@ -1026,7 +1028,7 @@
   <div id="detailSection" style="display:none;">
     <div class="detail-header">
       <h2 id="detailTitle">BTC / USDT</h2>
-      <span class="back-link" id="backLink">&larr; back to all pairs</span>
+      <span class="back-link" id="backLink">&larr; Back To Dashboard</span>
     </div>
 
     <div class="breakdown-strip" id="breakdownStrip">
@@ -1514,12 +1516,10 @@
       return '<div class="log-row">' +
         '<span class="time">' + fmtTime(r.closedAt) + '</span>' +
         '<span><span class="state-tag chip ' + cls + '">' + (win ? 'WIN' : (r.realizedPnl < 0 ? 'LOSS' : 'FLAT')) + '</span></span>' +
-        '<span class="reason-wrap"><span class="reason">' + desc + '</span><span class="tap-hint">tap to read more</span></span>' +
+        '<span class="reason" style="white-space:normal;overflow:visible;text-overflow:unset;font-size:11.5px;">' + desc + '</span>' +
         '<span class="conviction">' + sign + fmtMoney(r.realizedPnl) + '</span>' +
         '</div>';
     }).join('');
-
-    attachExpandToggle(listEl);
   }
 
   function renderBreakdown(rows) {
