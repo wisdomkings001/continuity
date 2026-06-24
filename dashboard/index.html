@@ -750,7 +750,7 @@
     .pnl-strip { grid-template-columns: repeat(2, 1fr); }
   }
 
-  /* ---------- Recent activity digest (home page) ---------- */
+  /* ---------- Recent closed positions digest (home page) ---------- */
 
   .digest-list {
     background: var(--bg-panel);
@@ -762,12 +762,13 @@
 
   .digest-row {
     display: grid;
-    grid-template-columns: 70px 90px 1fr 60px 70px;
+    grid-template-columns: 70px 55px 1fr 80px 60px;
     gap: 10px;
     align-items: center;
     padding: 11px 18px;
     border-bottom: 1px solid var(--line);
     font-size: 12.5px;
+    cursor: pointer;
   }
 
   .digest-row:last-child { border-bottom: none; }
@@ -780,7 +781,7 @@
 
   .digest-row .dg-direction {
     font-size: 11.5px;
-    color: var(--text-dim);
+    font-family: var(--mono);
   }
 
   .digest-row .dg-direction.long { color: var(--healthy); }
@@ -790,14 +791,33 @@
     font-family: var(--mono);
     font-size: 10.5px;
     color: var(--text-faint);
+  }
+
+  .digest-row .dg-pnl {
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 600;
     text-align: right;
   }
 
+  .digest-row .dg-pnl.positive { color: var(--healthy); }
+  .digest-row .dg-pnl.negative { color: var(--fault); }
+
+  .digest-row .dg-verdict {
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-align: right;
+  }
+
+  .digest-row .dg-verdict.profit { color: var(--healthy); }
+  .digest-row .dg-verdict.loss { color: var(--fault); }
+
   @media (max-width: 600px) {
     .digest-row {
-      grid-template-columns: 60px 80px 1fr;
+      grid-template-columns: 60px 50px 1fr 70px 52px;
+      padding: 10px 12px;
     }
-    .digest-row .dg-time { display: none; }
   }
 
   /* ---------- Pair overview grid ---------- */
@@ -963,7 +983,7 @@
     </div>
   </div>
 
-  <div class="status-strip">
+  <div class="status-strip" id="statusStrip">
     <div class="status-cell">
       <div class="label">Realized P&amp;L</div>
       <div class="value" id="realizedPnlValue">$0.00</div>
@@ -986,7 +1006,7 @@
     </div>
   </div>
 
-  <div class="daily-pnl-panel">
+  <div class="daily-pnl-panel" id="dailyPnlPanel">
     <div class="daily-pnl-title">Realized P&amp;L — last 3 days</div>
     <div class="daily-pnl-empty" id="dailyPnlEmpty" style="display:none;">No closed positions yet</div>
     <div class="daily-bars" id="dailyBars" style="display:none;"></div>
@@ -995,7 +1015,7 @@
   </div>
 
   <div class="section-label digest-toggle" id="digestSectionLabel">
-    <span>Recent activity — most recent call per coin</span>
+    <span>Recent closed positions — last per coin</span>
     <span class="digest-chevron" id="digestChevron">&#9656;</span>
   </div>
   <div class="digest-list" id="digestList" style="display:none;"></div>
@@ -1343,37 +1363,51 @@
 
   el('digestSectionLabel').addEventListener('click', toggleDigest);
 
-  function renderDigest(status) {
+  async function renderClosedDigest() {
     const listEl = el('digestList');
-    const pairs = status.pairs || [];
-
-    const withData = pairs
-      .map((p) => ({ pair: p, decision: status.lastDecisionByPair[p] }))
-      .filter((entry) => entry.decision);
-
-    if (!withData.length) {
-      listEl.innerHTML = '<div class="digest-row"><span></span><span></span><span style="color: var(--text-faint);">No diagnostic cycles yet — check back in a few minutes.</span><span></span><span></span></div>';
+    let pnlData;
+    try {
+      pnlData = await fetchJSON('/pnl?n=500');
+    } catch (e) {
       return;
     }
+    const trades = (pnlData && pnlData.closedTrades) || [];
+    if (!trades.length) return;
 
-    withData.sort((a, b) => new Date(b.decision.timestamp) - new Date(a.decision.timestamp));
+    // Find the most recently closed trade per pair
+    const latestByPair = {};
+    trades.forEach((t) => {
+      const existing = latestByPair[t.pair];
+      if (!existing || new Date(t.closedAt) > new Date(existing.closedAt)) {
+        latestByPair[t.pair] = t;
+      }
+    });
 
-    listEl.innerHTML = withData.map(({ pair, decision: d }) => {
-      const cls = stateChipClass(d.state);
-      const dirLabel = d.direction && d.direction !== 'none' ? d.direction.toUpperCase() : '—';
-      const dirClass = d.direction === 'long' ? 'long' : d.direction === 'short' ? 'short' : '';
-      return '<div class="digest-row" data-pair="' + pair + '">' +
-        '<span class="dg-pair">' + pair.replace('USDT', '') + '</span>' +
-        '<span><span class="state-tag chip ' + cls + '">' + d.state + '</span></span>' +
-        '<span class="dg-direction ' + dirClass + '">' + dirLabel + ' &middot; ' + d.convictionScore + '/100</span>' +
-        '<span></span>' +
-        '<span class="dg-time">' + fmtTime(d.timestamp) + '</span>' +
+    // Sort pairs by most recently closed first
+    const rows = Object.values(latestByPair)
+      .sort((a, b) => new Date(b.closedAt) - new Date(a.closedAt));
+
+    listEl.innerHTML = rows.map((t) => {
+      const pairLabel = t.pair.replace('USDT', '');
+      const dirClass = t.direction === 'long' ? 'long' : 'short';
+      const dirLabel = t.direction.toUpperCase();
+      const pnlVal = Number(t.realizedPnl);
+      const pnlClass = pnlVal >= 0 ? 'positive' : 'negative';
+      const pnlText = (pnlVal >= 0 ? '+' : '') + '$' + Math.abs(pnlVal).toFixed(2);
+      const verdictClass = pnlVal >= 0 ? 'profit' : 'loss';
+      const verdictText = pnlVal >= 0 ? 'PROFIT' : 'LOSS';
+      const timeText = fmtTime(t.closedAt);
+      return '<div class="digest-row" data-pair="' + t.pair + '">' +
+        '<span class="dg-pair">' + pairLabel + '</span>' +
+        '<span class="dg-direction ' + dirClass + '">' + dirLabel + '</span>' +
+        '<span class="dg-time">' + timeText + '</span>' +
+        '<span class="dg-pnl ' + pnlClass + '">' + pnlText + '</span>' +
+        '<span class="dg-verdict ' + verdictClass + '">' + verdictText + '</span>' +
         '</div>';
     }).join('');
 
     listEl.querySelectorAll('.digest-row').forEach((row) => {
       row.addEventListener('click', () => openDetail(row.dataset.pair));
-      row.style.cursor = 'pointer';
     });
   }
 
@@ -1406,6 +1440,11 @@
 
   function openDetail(pair) {
     activePair = pair;
+    // Push a history entry so the phone back button triggers popstate
+    // instead of navigating away from the page entirely.
+    history.pushState({ detail: pair }, '');
+    el('statusStrip').style.display = 'none';
+    el('dailyPnlPanel').style.display = 'none';
     el('digestSectionLabel').style.display = 'none';
     el('digestList').style.display = 'none';
     el('overviewGrid').style.display = 'none';
@@ -1417,16 +1456,23 @@
 
   function closeDetail() {
     activePair = null;
+    el('statusStrip').style.display = '';
+    el('dailyPnlPanel').style.display = '';
     el('digestSectionLabel').style.display = 'flex';
-    // Restore the list to whatever expand/collapse state it was in before
-    // drilling into a coin — going back shouldn't force it open.
     el('digestList').style.display = digestExpanded ? 'block' : 'none';
     el('overviewGrid').style.display = 'grid';
     el('detailSection').style.display = 'none';
     el('pairsSectionLabel').textContent = 'Pairs — tap any coin for detail';
   }
 
-  el('backLink').addEventListener('click', closeDetail);
+  el('backLink').addEventListener('click', () => {
+    history.back();
+  });
+
+  // Phone/browser back button — intercept and return to home instead of leaving
+  window.addEventListener('popstate', (e) => {
+    if (activePair) closeDetail();
+  });
 
   async function fetchDetail(pair) {
     try {
@@ -1594,7 +1640,7 @@
       lastStatus = status;
       renderTopStrip(status);
       renderTopPnl();
-      renderDigest(status);
+      renderClosedDigest();
       renderOverviewGrid(status);
       if (activePair) fetchDetail(activePair);
     } catch (e) {
