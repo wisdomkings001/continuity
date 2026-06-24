@@ -1514,10 +1514,12 @@
       return '<div class="log-row">' +
         '<span class="time">' + fmtTime(r.closedAt) + '</span>' +
         '<span><span class="state-tag chip ' + cls + '">' + (win ? 'WIN' : (r.realizedPnl < 0 ? 'LOSS' : 'FLAT')) + '</span></span>' +
-        '<span class="reason">' + desc + '</span>' +
+        '<span class="reason-wrap"><span class="reason">' + desc + '</span><span class="tap-hint">tap to read more</span></span>' +
         '<span class="conviction">' + sign + fmtMoney(r.realizedPnl) + '</span>' +
         '</div>';
     }).join('');
+
+    attachExpandToggle(listEl);
   }
 
   function renderBreakdown(rows) {
