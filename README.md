@@ -7,12 +7,15 @@ Paper trading only. No real funds are used at any point.
 **Live dashboard:** https://wisdomkings001.github.io/continuity/dashboard/index.html
 
 **Agent endpoint:** https://continuity-production-ce7d.up.railway.app
+---
 
 ## The idea
 
 Most trading bots act constantly so they look "active." Continuity does the opposite: every cycle, it runs a diagnostic on the market and only commits paper size when its signals genuinely agree with each other. When they don't, it says so and refuses to trade rather than force a guess.
 
 It tracks **nine pairs independently** — BTC, ETH, SOL, BNB, XRP, DOGE, ADA, AVAX, LINK (all vs USDT) — sharing one paper balance across all of them, like one book across a small portfolio. A strong signal on one coin and a refusal on another in the same sweep is expected: conviction is judged per-market, not as one blanket mood for "crypto."
+
+---
 
 ## How it decides
 
@@ -32,17 +35,29 @@ How strongly trend and sentiment *agree* — not their raw average — produces 
 
 Every cycle writes a row to the log regardless of outcome — including refusals. A trading system's discipline shows up as much in what it won't do as in what it trades.
 
+![Dashboard overview — 9 pairs, live conviction scores](screenshots/overview.png)
+
+---
+
 ## What happens after a trade opens
 
 A position isn't just logged and forgotten — it's held for up to **one hour**, then closed against the real live price and scored as an actual win or loss. If it moves **2% against entry** before the hour is up, it closes early instead of riding out a bad call — a stop-loss, checked independently every few minutes, not just at the one-hour mark.
 
 This is written to a separate `closed_trades.csv`, so the original per-cycle decision log stays untouched. The dashboard shows win rate, total realized P&L, and every closed trade per pair.
 
+![Per-coin detail — closed trades, win rate, realized P&L](screenshots/detail.png)
+
+---
+
 ## A real bug, found and fixed with real data
 
 After running for a while, the closed-trade log showed every single position going long, never short — with losses concentrated in the highest-conviction calls. The cause: sentiment treated *any* long-skewed positioning as bullish confirmation, but that skew is the structural norm for crypto perpetuals, not a meaningful signal. It was quietly biasing the whole system toward long regardless of actual conditions.
 
 The fix only treats genuinely extreme positioning as a signal, and reads it as contrarian. It was tested against the exact real trades that exposed the bug before being deployed — this is the kind of issue that only shows up once an agent runs with real, money-shaped consequences, not something a backtest alone would surface.
+
+![Ask Continuity — explains its own decisions in plain language](screenshots/chat.png)
+
+---
 
 ## Staying alive
 
@@ -51,6 +66,8 @@ Hosting can restart a container at any time. Three things make sure that doesn't
 - Trade log, closed-trades log, and full state (including open positions) back up to GitHub every hour
 - On startup, if no local state exists, the last backup is restored before falling back to a fresh balance
 - Any open position is checked immediately on startup and on its own 3-minute timer — never left waiting on the slower full signal sweep to notice a stop-loss has been breached
+
+---
 
 ## Project structure
 
@@ -65,6 +82,8 @@ continuity/
 └── dashboard/
     └── index.html       # single-file live dashboard, no build step
 ```
+
+---
 
 ## Running it yourself
 
@@ -102,6 +121,8 @@ Everything lives in `CONFIG` at the top of `agent.js` — pairs, interval, start
 
 Open `dashboard/index.html` directly — no server needed. First load asks for the agent's URL (your Railway domain, or `http://localhost:3000` locally); it's remembered after that.
 
+---
+
 ## Deploying to Railway
 
 1. Push this repo to GitHub.
@@ -109,6 +130,8 @@ Open `dashboard/index.html` directly — no server needed. First load asks for t
 3. Railway reads `railway.json` and runs `node agent.js` automatically.
 4. Add `BITGET_API_KEY` and/or `GITHUB_TOKEN` + `GITHUB_REPO` as environment variables if desired — never commit them.
 5. Generate a public domain, paste it into the dashboard.
+
+---
 
 ## What's built
 
@@ -119,6 +142,8 @@ Open `dashboard/index.html` directly — no server needed. First load asks for t
 - Graceful handling of API failures — logged as a refusal, never a crash
 - Hourly GitHub backup of logs and full state, with automatic restore on a fresh container
 - Live dashboard: overview grid, per-pair detail with a conviction chart and closed-trade history, a recent-activity digest, and a read-only chat that explains real decisions — including the stop-loss — without taking instructions
+
+---
 
 ## Tools used
 
