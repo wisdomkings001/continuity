@@ -197,13 +197,7 @@
     text-transform: uppercase;
     letter-spacing: 0.06em;
     color: var(--text-faint);
-    margin-bottom: 10px;
-  }
-
-  .daily-pnl-svg {
-    width: 100%;
-    height: 120px;
-    display: block;
+    margin-bottom: 14px;
   }
 
   .daily-pnl-empty {
@@ -211,7 +205,110 @@
     font-size: 12px;
     color: var(--text-faint);
     text-align: center;
-    padding: 30px 0;
+    padding: 20px 0;
+  }
+
+  .daily-bars {
+    display: flex;
+    gap: 12px;
+    align-items: flex-end;
+    justify-content: flex-start;
+    margin-bottom: 12px;
+  }
+
+  .daily-bar-col {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+    min-width: 80px;
+    flex: 1;
+    max-width: 160px;
+  }
+
+  .daily-bar-amount {
+    font-family: var(--mono);
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  .daily-bar-track {
+    width: 100%;
+    height: 56px;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    position: relative;
+  }
+
+  .daily-bar-fill {
+    width: 100%;
+    border-radius: 2px 2px 0 0;
+    min-height: 3px;
+    transition: height 0.3s ease;
+  }
+
+  .daily-bar-fill.is-today {
+    outline: 1.5px solid var(--text);
+    outline-offset: 1px;
+  }
+
+  .daily-bar-date {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-faint);
+  }
+
+  .daily-bar-date.is-today {
+    color: var(--text-dim);
+    font-weight: 600;
+  }
+
+  .daily-more-btn {
+    background: none;
+    border: 1px solid var(--line-bright);
+    color: var(--text-faint);
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    padding: 6px 12px;
+    border-radius: 2px;
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s;
+    display: block;
+    width: 100%;
+    text-align: center;
+    margin-top: 4px;
+  }
+
+  .daily-more-btn:hover { color: var(--healthy); border-color: var(--healthy-dim); }
+
+  .daily-history {
+    margin-top: 12px;
+    border-top: 1px solid var(--line);
+    padding-top: 10px;
+  }
+
+  .daily-history-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 7px 0;
+    border-bottom: 1px solid var(--line);
+    font-family: var(--mono);
+    font-size: 12px;
+  }
+
+  .daily-history-row:last-child { border-bottom: none; }
+
+  .daily-history-row .dh-date {
+    color: var(--text-dim);
+  }
+
+  .daily-history-row .dh-date.is-today { color: var(--text); font-weight: 600; }
+
+  .daily-history-row .dh-amount {
+    font-weight: 600;
   }
 
   .state-badge {
@@ -895,9 +992,11 @@
   </div>
 
   <div class="daily-pnl-panel">
-    <div class="daily-pnl-title">Realized P&amp;L by day — last 14 days</div>
-    <svg class="daily-pnl-svg" id="dailyPnlSvg" viewBox="0 0 1000 120" preserveAspectRatio="none"></svg>
+    <div class="daily-pnl-title">Realized P&amp;L — last 3 days</div>
     <div class="daily-pnl-empty" id="dailyPnlEmpty" style="display:none;">No closed positions yet</div>
+    <div class="daily-bars" id="dailyBars" style="display:none;"></div>
+    <button class="daily-more-btn" id="dailyMoreBtn" style="display:none;">View full history</button>
+    <div class="daily-history" id="dailyHistory" style="display:none;"></div>
   </div>
 
   <div class="section-label digest-toggle" id="digestSectionLabel">
@@ -1138,66 +1237,106 @@
     }
   }
 
+  let dailyHistoryVisible = false;
+
   function dayKey(isoString) {
-    // Calendar day in the viewer's local timezone, not UTC — "today" should
-    // mean today for whoever's looking at the dashboard.
     const d = new Date(isoString);
     return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
   }
 
   function renderDailyPnlChart(closedTrades) {
-    const svg = el('dailyPnlSvg');
     const emptyEl = el('dailyPnlEmpty');
+    const barsEl = el('dailyBars');
+    const moreBtnEl = el('dailyMoreBtn');
+    const historyEl = el('dailyHistory');
 
     if (!closedTrades.length) {
-      svg.style.display = 'none';
       emptyEl.style.display = 'block';
+      barsEl.style.display = 'none';
+      moreBtnEl.style.display = 'none';
+      historyEl.style.display = 'none';
       return;
     }
 
+    emptyEl.style.display = 'none';
+
+    // Group by calendar day in local timezone
     const totalsByDay = {};
     closedTrades.forEach((t) => {
       const key = dayKey(t.closedAt);
       totalsByDay[key] = (totalsByDay[key] || 0) + (t.realizedPnl || 0);
     });
 
-    // Build a fixed 14-day window ending today, in order, even for days
-    // with no closed trades (those just render as a zero-height bar) —
-    // keeps the chart's day-to-day spacing consistent rather than
-    // skipping gaps.
-    const days = [];
     const todayKey = dayKey(new Date().toISOString());
-    for (let i = 13; i >= 0; i--) {
-      const d = new Date();
-      d.setDate(d.getDate() - i);
-      const key = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
-      days.push({ key, total: totalsByDay[key] || 0, isToday: key === todayKey });
+
+    // Build full sorted history (most recent first) for "view more"
+    const allDays = Object.keys(totalsByDay)
+      .sort((a, b) => b.localeCompare(a))
+      .map((key) => ({ key, total: totalsByDay[key], isToday: key === todayKey }));
+
+    // Last 3 days (could be any days with data, most recent 3)
+    const last3 = allDays.slice(0, 3).reverse(); // oldest first so bars read left→right
+
+    if (!last3.length) {
+      emptyEl.style.display = 'block';
+      barsEl.style.display = 'none';
+      moreBtnEl.style.display = 'none';
+      return;
     }
 
-    svg.style.display = 'block';
-    emptyEl.style.display = 'none';
+    // Scale bar heights relative to the max absolute value in the 3 shown
+    const maxAbs = Math.max(1, ...last3.map((d) => Math.abs(d.total)));
 
-    const w = 1000, h = 120, pad = 10;
-    const maxAbs = Math.max(1, ...days.map((d) => Math.abs(d.total)));
-    const zeroY = h / 2;
-    const barWidth = (w - pad * 2) / days.length * 0.6;
-    const slot = (w - pad * 2) / days.length;
+    barsEl.style.display = 'flex';
+    barsEl.innerHTML = last3.map((d) => {
+      const pct = Math.max(3, Math.round((Math.abs(d.total) / maxAbs) * 100)); // 3% min height
+      const color = d.total > 0 ? '#3ddc97' : (d.total < 0 ? '#d85c5c' : '#2a3633');
+      const amountColor = d.total > 0 ? 'var(--healthy)' : (d.total < 0 ? 'var(--fault)' : 'var(--text-faint)');
+      const todayCls = d.isToday ? ' is-today' : '';
+      const sign = d.total > 0 ? '+' : '';
+      // Format the date label: "Jun 24" style
+      const dateObj = new Date(d.key + 'T12:00:00');
+      const dateLabel = dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + (d.isToday ? ' (today)' : '');
+      return '<div class="daily-bar-col">' +
+        '<div class="daily-bar-amount" style="color:' + amountColor + ';">' + sign + fmtMoney(d.total) + '</div>' +
+        '<div class="daily-bar-track">' +
+          '<div class="daily-bar-fill' + todayCls + '" style="height:' + pct + '%; background:' + color + ';"></div>' +
+        '</div>' +
+        '<div class="daily-bar-date' + todayCls + '">' + dateLabel + '</div>' +
+      '</div>';
+    }).join('');
 
-    let svgContent = `<line x1="${pad}" y1="${zeroY}" x2="${w - pad}" y2="${zeroY}" stroke="var(--line-bright)" stroke-width="1" />`;
+    // "View more" button — only show if there are more than 3 days
+    if (allDays.length > 3) {
+      moreBtnEl.style.display = 'block';
+      moreBtnEl.textContent = dailyHistoryVisible ? 'Hide full history' : 'View full history (' + allDays.length + ' days)';
+    } else {
+      moreBtnEl.style.display = 'none';
+      historyEl.style.display = 'none';
+    }
 
-    days.forEach((d, i) => {
-      const x = pad + i * slot + (slot - barWidth) / 2;
-      const barHeight = Math.abs(d.total) / maxAbs * (zeroY - pad);
-      const y = d.total >= 0 ? zeroY - barHeight : zeroY;
-      const color = d.total > 0 ? '#3ddc97' : (d.total < 0 ? '#d85c5c' : 'var(--line-bright)');
-      const opacity = d.isToday ? '1' : '0.75';
-      const strokeAttr = d.isToday ? `stroke="#e8e6df" stroke-width="1.5"` : '';
-      svgContent += `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barWidth.toFixed(1)}" height="${Math.max(1, barHeight).toFixed(1)}" fill="${color}" opacity="${opacity}" ${strokeAttr} />`;
-    });
+    // Render the full history list (hidden by default, toggled by button)
+    historyEl.innerHTML = allDays.map((d) => {
+      const amountColor = d.total > 0 ? 'var(--healthy)' : (d.total < 0 ? 'var(--fault)' : 'var(--text-faint)');
+      const sign = d.total > 0 ? '+' : '';
+      const dateObj = new Date(d.key + 'T12:00:00');
+      const dateLabel = dateObj.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+      return '<div class="daily-history-row">' +
+        '<span class="dh-date' + (d.isToday ? ' is-today' : '') + '">' + dateLabel + (d.isToday ? ' (today)' : '') + '</span>' +
+        '<span class="dh-amount" style="color:' + amountColor + ';">' + sign + fmtMoney(d.total) + '</span>' +
+      '</div>';
+    }).join('');
 
-    svg.innerHTML = svgContent;
-    svg.setAttribute('title', days.map((d) => d.key + ': ' + fmtMoney(d.total)).join(' | '));
+    historyEl.style.display = dailyHistoryVisible ? 'block' : 'none';
   }
+
+  // Wire the "view more" toggle once
+  el('dailyMoreBtn').addEventListener('click', () => {
+    dailyHistoryVisible = !dailyHistoryVisible;
+    el('dailyHistory').style.display = dailyHistoryVisible ? 'block' : 'none';
+    const allCount = el('dailyHistory').querySelectorAll('.daily-history-row').length;
+    el('dailyMoreBtn').textContent = dailyHistoryVisible ? 'Hide full history' : 'View full history (' + allCount + ' days)';
+  });
 
   // ---------- Overview grid ----------
 
