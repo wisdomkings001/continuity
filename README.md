@@ -4,6 +4,9 @@ An autonomous diagnostic trading agent built for **Bitget AI Base Camp Hackathon
 
 Paper trading only. No real funds are used at any point.
 
+**Live dashboard:** https://wisdomkings001.github.io/continuity/dashboard/index.html
+**Agent source:** https://github.com/wisdomkings001/continuity
+
 ## The idea
 
 Most trading bots act constantly so they look "active." Continuity does the opposite: every cycle, it runs a diagnostic on the market and only commits paper size when its signals genuinely agree with each other. When they don't, it says so and refuses to trade rather than force a guess.
