@@ -183,6 +183,37 @@
     font-family: var(--mono);
   }
 
+  .daily-pnl-panel {
+    background: var(--bg-panel);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    padding: 16px 18px;
+    margin-bottom: 20px;
+  }
+
+  .daily-pnl-title {
+    font-family: var(--mono);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-faint);
+    margin-bottom: 10px;
+  }
+
+  .daily-pnl-svg {
+    width: 100%;
+    height: 120px;
+    display: block;
+  }
+
+  .daily-pnl-empty {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text-faint);
+    text-align: center;
+    padding: 30px 0;
+  }
+
   .state-badge {
     display: inline-flex;
     align-items: center;
@@ -863,6 +894,12 @@
     </div>
   </div>
 
+  <div class="daily-pnl-panel">
+    <div class="daily-pnl-title">Realized P&amp;L by day — last 14 days</div>
+    <svg class="daily-pnl-svg" id="dailyPnlSvg" viewBox="0 0 1000 120" preserveAspectRatio="none"></svg>
+    <div class="daily-pnl-empty" id="dailyPnlEmpty" style="display:none;">No closed positions yet</div>
+  </div>
+
   <div class="section-label digest-toggle" id="digestSectionLabel">
     <span>Recent activity — most recent call per coin</span>
     <span class="digest-chevron" id="digestChevron">&#9656;</span>
@@ -1094,9 +1131,72 @@
         const estimatedFees = total - netChange; // fees are the portion of the drop NOT explained by realized P&L
         el('balanceAndFeesSub').textContent = 'balance ' + fmtMoney(balance) + ' \u00b7 fees paid ' + fmtMoney(Math.abs(estimatedFees));
       }
+
+      renderDailyPnlChart(pnl.closedTrades || []);
     } catch (e) {
       console.warn('P&L summary fetch failed:', e.message);
     }
+  }
+
+  function dayKey(isoString) {
+    // Calendar day in the viewer's local timezone, not UTC — "today" should
+    // mean today for whoever's looking at the dashboard.
+    const d = new Date(isoString);
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  }
+
+  function renderDailyPnlChart(closedTrades) {
+    const svg = el('dailyPnlSvg');
+    const emptyEl = el('dailyPnlEmpty');
+
+    if (!closedTrades.length) {
+      svg.style.display = 'none';
+      emptyEl.style.display = 'block';
+      return;
+    }
+
+    const totalsByDay = {};
+    closedTrades.forEach((t) => {
+      const key = dayKey(t.closedAt);
+      totalsByDay[key] = (totalsByDay[key] || 0) + (t.realizedPnl || 0);
+    });
+
+    // Build a fixed 14-day window ending today, in order, even for days
+    // with no closed trades (those just render as a zero-height bar) —
+    // keeps the chart's day-to-day spacing consistent rather than
+    // skipping gaps.
+    const days = [];
+    const todayKey = dayKey(new Date().toISOString());
+    for (let i = 13; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const key = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+      days.push({ key, total: totalsByDay[key] || 0, isToday: key === todayKey });
+    }
+
+    svg.style.display = 'block';
+    emptyEl.style.display = 'none';
+
+    const w = 1000, h = 120, pad = 10;
+    const maxAbs = Math.max(1, ...days.map((d) => Math.abs(d.total)));
+    const zeroY = h / 2;
+    const barWidth = (w - pad * 2) / days.length * 0.6;
+    const slot = (w - pad * 2) / days.length;
+
+    let svgContent = `<line x1="${pad}" y1="${zeroY}" x2="${w - pad}" y2="${zeroY}" stroke="var(--line-bright)" stroke-width="1" />`;
+
+    days.forEach((d, i) => {
+      const x = pad + i * slot + (slot - barWidth) / 2;
+      const barHeight = Math.abs(d.total) / maxAbs * (zeroY - pad);
+      const y = d.total >= 0 ? zeroY - barHeight : zeroY;
+      const color = d.total > 0 ? '#3ddc97' : (d.total < 0 ? '#d85c5c' : 'var(--line-bright)');
+      const opacity = d.isToday ? '1' : '0.75';
+      const strokeAttr = d.isToday ? `stroke="#e8e6df" stroke-width="1.5"` : '';
+      svgContent += `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barWidth.toFixed(1)}" height="${Math.max(1, barHeight).toFixed(1)}" fill="${color}" opacity="${opacity}" ${strokeAttr} />`;
+    });
+
+    svg.innerHTML = svgContent;
+    svg.setAttribute('title', days.map((d) => d.key + ': ' + fmtMoney(d.total)).join(' | '));
   }
 
   // ---------- Overview grid ----------
