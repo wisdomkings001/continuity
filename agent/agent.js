@@ -546,6 +546,9 @@ function buildStatusPayload() {
     if (d && (!mostRecent || new Date(d.timestamp) > new Date(mostRecent.timestamp))) mostRecent = d;
   });
 
+  const openPositions = {};
+  CONFIG.PAIRS.forEach((p) => { openPositions[p] = state.pairs[p].openPosition || null; });
+
   return {
     pairs: CONFIG.PAIRS,
     balance: state.balance,
@@ -554,6 +557,7 @@ function buildStatusPayload() {
     lastDecisionByPair: pairs,
     lastDecision: mostRecent,
     openPositionCount: CONFIG.PAIRS.filter((p) => state.pairs[p].openPosition).length,
+    openPositions,
   };
 }
 
@@ -628,6 +632,25 @@ const server = http.createServer((req, res) => {
   if (url.pathname === '/health') {
     res.writeHead(200, { 'Content-Type': 'text/plain', ...corsHeaders() });
     return res.end('ok');
+  }
+
+  if (url.pathname.startsWith('/price/')) {
+    const pair = url.pathname.slice('/price/'.length).toUpperCase();
+    if (!CONFIG.PAIRS.includes(pair)) {
+      res.writeHead(404, { 'Content-Type': 'application/json', ...corsHeaders() });
+      return res.end(JSON.stringify({ error: `Unknown pair ${pair}` }));
+    }
+    fetchTicker(pair)
+      .then((ticker) => {
+        const price = parseFloat(ticker.lastPr || ticker.last);
+        res.writeHead(200, { 'Content-Type': 'application/json', ...corsHeaders() });
+        res.end(JSON.stringify({ pair, price }));
+      })
+      .catch((err) => {
+        res.writeHead(502, { 'Content-Type': 'application/json', ...corsHeaders() });
+        res.end(JSON.stringify({ error: err.message }));
+      });
+    return;
   }
 
   if (url.pathname === '/sync' && req.method === 'POST') {
