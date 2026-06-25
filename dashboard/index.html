@@ -921,6 +921,73 @@
 
   .detail-header .back-link:hover { color: var(--healthy); }
 
+  /* ---------- Open position live panel ---------- */
+
+  .open-pos-card {
+    background: var(--bg-panel);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    padding: 18px;
+    margin-bottom: 20px;
+    font-family: var(--mono);
+  }
+
+  .open-pos-empty {
+    background: var(--bg-panel);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    padding: 16px 18px;
+    margin-bottom: 20px;
+    font-size: 12.5px;
+    color: var(--text-faint);
+    font-family: var(--mono);
+  }
+
+  .op-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+    font-size: 12.5px;
+  }
+
+  .op-row:last-child { margin-bottom: 0; }
+
+  .op-label { color: var(--text-dim); font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; }
+
+  .op-value { font-weight: 600; font-size: 13px; }
+
+  .op-pnl-positive { color: var(--healthy); }
+  .op-pnl-negative { color: var(--fault); }
+
+  .op-progress-wrap {
+    margin: 14px 0 4px;
+  }
+
+  .op-progress-label {
+    display: flex;
+    justify-content: space-between;
+    font-size: 10.5px;
+    color: var(--text-faint);
+    margin-bottom: 5px;
+  }
+
+  .op-progress-track {
+    height: 5px;
+    background: var(--line);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+
+  .op-progress-fill {
+    height: 100%;
+    border-radius: 3px;
+    background: var(--healthy);
+    transition: width 0.5s ease;
+  }
+
+  .op-stop-warn { background: var(--fault); }
+
   /* ---------- Section divider label ---------- */
 
   .section-label {
@@ -1060,6 +1127,15 @@
         <div class="bd-label">Fee drag this view</div>
         <div class="bd-value" id="bdNetImpact">$0.00</div>
       </div>
+    </div>
+
+    <div id="openPositionPanel" style="display:none;">
+      <div class="section-label">Current open position</div>
+      <div class="open-pos-card" id="openPosCard"></div>
+    </div>
+    <div id="noOpenPositionPanel" style="display:none;">
+      <div class="section-label">Current open position</div>
+      <div class="open-pos-empty">No open position on this pair</div>
     </div>
 
     <div class="section-label">Realized profit and loss — closed positions only</div>
@@ -1458,6 +1534,9 @@
 
   function closeDetail() {
     activePair = null;
+    if (openPosRefreshTimer) { clearInterval(openPosRefreshTimer); openPosRefreshTimer = null; }
+    el('openPositionPanel').style.display = 'none';
+    el('noOpenPositionPanel').style.display = 'none';
     el('statusStrip').style.display = '';
     el('dailyPnlPanel').style.display = '';
     el('digestSectionLabel').style.display = 'flex';
@@ -1476,7 +1555,109 @@
     if (activePair) closeDetail();
   });
 
+  let openPosRefreshTimer = null;
+  const HOLD_MS = 60 * 60 * 1000; // 1 hour, matching agent CONFIG.POSITION_HOLD_MS
+  const STOP_LOSS_PCT = 0.02;      // 2%, matching agent CONFIG.STOP_LOSS_PCT
+
+  async function renderOpenPosition(pair, openPositions) {
+    const panelShow = el('openPositionPanel');
+    const panelNone = el('noOpenPositionPanel');
+    const card = el('openPosCard');
+
+    const pos = openPositions && openPositions[pair];
+
+    if (!pos) {
+      panelShow.style.display = 'none';
+      panelNone.style.display = 'block';
+      return;
+    }
+
+    panelNone.style.display = 'none';
+    panelShow.style.display = 'block';
+
+    // Fetch live price
+    let currentPrice = pos.entryPrice;
+    try {
+      const pd = await fetchJSON('/price/' + pair);
+      if (pd && pd.price) currentPrice = pd.price;
+    } catch (_) { /* use entry price as fallback */ }
+
+    const entryPrice = Number(pos.entryPrice);
+    const qty = Number(pos.quantity);
+    const direction = pos.direction;
+    const openedAt = new Date(pos.openedAt);
+    const now = new Date();
+    const elapsedMs = now - openedAt;
+    const holdPct = Math.min(100, Math.round((elapsedMs / HOLD_MS) * 100));
+    const elapsedMins = Math.floor(elapsedMs / 60000);
+    const remainMins = Math.max(0, 60 - elapsedMins);
+
+    // P&L from current price
+    const rawPnl = direction === 'long'
+      ? (currentPrice - entryPrice) * qty
+      : (entryPrice - currentPrice) * qty;
+    const pnlClass = rawPnl >= 0 ? 'op-pnl-positive' : 'op-pnl-negative';
+    const pnlText = (rawPnl >= 0 ? '+' : '') + '$' + Math.abs(rawPnl).toFixed(2);
+
+    // Stop-loss proximity — how far current price has moved against entry
+    const moveAgainst = direction === 'long'
+      ? ((entryPrice - currentPrice) / entryPrice)
+      : ((currentPrice - entryPrice) / entryPrice);
+    const stopPct = Math.max(0, Math.min(100, Math.round((moveAgainst / STOP_LOSS_PCT) * 100)));
+    const nearStop = stopPct >= 70;
+
+    card.innerHTML =
+      '<div class="op-row">' +
+        '<span class="op-label">Direction</span>' +
+        '<span class="op-value" style="color:' + (direction === 'long' ? 'var(--healthy)' : 'var(--fault)') + '">' + direction.toUpperCase() + '</span>' +
+      '</div>' +
+      '<div class="op-row">' +
+        '<span class="op-label">Opened</span>' +
+        '<span class="op-value">' + fmtTime(pos.openedAt) + '</span>' +
+      '</div>' +
+      '<div class="op-row">' +
+        '<span class="op-label">Entry price</span>' +
+        '<span class="op-value">$' + entryPrice.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 6}) + '</span>' +
+      '</div>' +
+      '<div class="op-row">' +
+        '<span class="op-label">Current price</span>' +
+        '<span class="op-value">$' + currentPrice.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 6}) + '</span>' +
+      '</div>' +
+      '<div class="op-row">' +
+        '<span class="op-label">Unrealized P&L</span>' +
+        '<span class="op-value ' + pnlClass + '">' + pnlText + '</span>' +
+      '</div>' +
+      '<div class="op-row">' +
+        '<span class="op-label">Stop-loss proximity</span>' +
+        '<span class="op-value" style="color:' + (nearStop ? 'var(--fault)' : 'var(--text-dim)') + '">' + stopPct + '% of 2% threshold</span>' +
+      '</div>' +
+      '<div class="op-progress-wrap">' +
+        '<div class="op-progress-label">' +
+          '<span>Hold window — ' + elapsedMins + 'min elapsed</span>' +
+          '<span>' + remainMins + 'min remaining</span>' +
+        '</div>' +
+        '<div class="op-progress-track">' +
+          '<div class="op-progress-fill' + (nearStop ? ' op-stop-warn' : '') + '" style="width:' + holdPct + '%"></div>' +
+        '</div>' +
+      '</div>';
+  }
+
   async function fetchDetail(pair) {
+    // Fetch status to get open position data for this pair
+    try {
+      const status = await fetchJSON('/status');
+      await renderOpenPosition(pair, status.openPositions || {});
+      // Auto-refresh the open position panel every 30 seconds
+      if (openPosRefreshTimer) clearInterval(openPosRefreshTimer);
+      openPosRefreshTimer = setInterval(async () => {
+        if (activePair === pair) {
+          const s = await fetchJSON('/status').catch(() => null);
+          if (s) await renderOpenPosition(pair, s.openPositions || {});
+        }
+      }, 30000);
+    } catch (e) {
+      console.warn('Open position fetch failed:', e.message);
+    }
     try {
       const log = await fetchJSON('/log?n=80&pair=' + encodeURIComponent(pair));
       renderLog(log);
