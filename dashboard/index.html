@@ -1311,7 +1311,7 @@
 
   async function renderTopPnl() {
     try {
-      const pnl = await fetchJSON('/pnl?n=500');
+      const pnl = await fetchJSON('/pnl?n=9999');
       const total = pnl.totalRealizedPnl || 0;
       el('realizedPnlValue').textContent = fmtMoney(total);
       el('realizedPnlValue').className = 'value ' + (Math.abs(total) < 0.0001 ? '' : (total > 0 ? 'up' : 'down'));
@@ -1445,7 +1445,7 @@
     const listEl = el('digestList');
     let pnlData;
     try {
-      pnlData = await fetchJSON('/pnl?n=500');
+      pnlData = await fetchJSON('/pnl?n=9999');
     } catch (e) {
       return;
     }
@@ -1471,7 +1471,7 @@
       const dirLabel = t.direction.toUpperCase();
       const pnlVal = Number(t.realizedPnl);
       const pnlClass = pnlVal >= 0 ? 'positive' : 'negative';
-      const pnlText = (pnlVal >= 0 ? '+' : '') + '$' + Math.abs(pnlVal).toFixed(2);
+      const pnlText = (pnlVal >= 0 ? '+' : '-') + '$' + Math.abs(pnlVal).toFixed(2);
       const verdictClass = pnlVal >= 0 ? 'profit' : 'loss';
       const verdictText = pnlVal >= 0 ? 'PROFIT' : 'LOSS';
       const timeText = fmtTime(t.closedAt);
@@ -1597,7 +1597,7 @@
       ? (currentPrice - entryPrice) * qty
       : (entryPrice - currentPrice) * qty;
     const pnlClass = rawPnl >= 0 ? 'op-pnl-positive' : 'op-pnl-negative';
-    const pnlText = (rawPnl >= 0 ? '+' : '') + '$' + Math.abs(rawPnl).toFixed(2);
+    const pnlText = (rawPnl >= 0 ? '+' : '-') + '$' + Math.abs(rawPnl).toFixed(2);
 
     // Stop-loss proximity — how far current price has moved against entry
     const moveAgainst = direction === 'long'
