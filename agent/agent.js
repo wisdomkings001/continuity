@@ -587,7 +587,7 @@ const server = http.createServer((req, res) => {
       try { question = JSON.parse(body).question || ''; } catch (_) { /* malformed body, fall through */ }
       const statusPayload = buildStatusPayload();
       const recentLog = readRecentLogRows(200);
-      const closedTrades = readClosedTrades(200);
+      const closedTrades = readClosedTrades(9999);
       const pnlSummary = {
         totalRealizedPnl: closedTrades.reduce((sum, r) => sum + r.realizedPnl, 0),
         wins: closedTrades.filter((r) => r.realizedPnl > 0).length,
