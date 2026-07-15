@@ -1,13 +1,8 @@
 {
-  "balance": 8902.450536508868,
+  "balance": 8894.672632300946,
   "pairs": {
     "BTCUSDT": {
       "priceHistory": [
-        62361.4,
-        62387.8,
-        62483.5,
-        62570,
-        62494.7,
         62491.3,
         62508.7,
         62568.6,
@@ -202,31 +197,36 @@
         65121.3,
         65090.5,
         65002.8,
-        65096.9
+        65096.9,
+        65118.9,
+        65000.7,
+        65003,
+        65083.3,
+        64973.5
       ],
       "lastDecision": {
-        "timestamp": "2026-07-15T17:02:44.843Z",
+        "timestamp": "2026-07-15T18:03:17.372Z",
         "pair": "BTCUSDT",
         "state": "FAULT",
-        "convictionScore": 4,
+        "convictionScore": 10,
         "direction": "none",
-        "price": 65096.9,
+        "price": 64973.5,
         "quantity": 0,
         "balanceChange": 0,
-        "balanceAfter": 8902.450536508868,
-        "reason": "Signals contradict or noise too high to diagnose cleanly. Trend: -0.24% move over last 10 candles. Sentiment: funding 0.0005%, L/S ratio 1.36. Volatility: 0.188% stdev. Refusing to trade — protecting capital over forcing a read.",
+        "balanceAfter": 8894.672632300946,
+        "reason": "Signals contradict or noise too high to diagnose cleanly. Trend: -0.44% move over last 10 candles. Sentiment: funding -0.0010%, L/S ratio 1.34. Volatility: 0.125% stdev. Refusing to trade — protecting capital over forcing a read.",
         "detail": {
           "trend": {
-            "value": -11.97642414471594,
-            "label": "-0.24% move over last 10 candles"
+            "value": -22.156607066517097,
+            "label": "-0.44% move over last 10 candles"
           },
           "vol": {
-            "value": 0.18812201906759893,
-            "label": "0.188% stdev"
+            "value": 0.1251325783944239,
+            "label": "0.125% stdev"
           },
           "sentiment": {
             "value": 0,
-            "label": "funding 0.0005%, L/S ratio 1.36"
+            "label": "funding -0.0010%, L/S ratio 1.34"
           }
         }
       },
@@ -234,11 +234,6 @@
     },
     "ETHUSDT": {
       "priceHistory": [
-        1780.46,
-        1781.55,
-        1784.13,
-        1789.72,
-        1783.47,
         1784.1,
         1784.24,
         1785.57,
@@ -433,31 +428,36 @@
         1918.88,
         1919.29,
         1914.55,
-        1920.86
+        1920.86,
+        1920.82,
+        1922.42,
+        1923.7,
+        1925.62,
+        1928.34
       ],
       "lastDecision": {
-        "timestamp": "2026-07-15T17:02:47.095Z",
+        "timestamp": "2026-07-15T18:03:19.613Z",
         "pair": "ETHUSDT",
         "state": "FAULT",
-        "convictionScore": 9,
+        "convictionScore": 1,
         "direction": "none",
-        "price": 1920.86,
+        "price": 1928.34,
         "quantity": 0,
         "balanceChange": 0,
-        "balanceAfter": 8902.450536508868,
-        "reason": "Signals contradict or noise too high to diagnose cleanly. Trend: -0.43% move over last 10 candles. Sentiment: funding 0.0072%, L/S ratio 1.41. Volatility: 0.277% stdev. Refusing to trade — protecting capital over forcing a read.",
+        "balanceAfter": 8894.672632300946,
+        "reason": "Signals contradict or noise too high to diagnose cleanly. Trend: 0.10% move over last 10 candles. Sentiment: funding 0.0083%, L/S ratio 1.40. Volatility: 0.202% stdev. Refusing to trade — protecting capital over forcing a read.",
         "detail": {
           "trend": {
-            "value": -21.53775976197062,
-            "label": "-0.43% move over last 10 candles"
+            "value": 5.009317850301431,
+            "label": "0.10% move over last 10 candles"
           },
           "vol": {
-            "value": 0.2765432133211098,
-            "label": "0.277% stdev"
+            "value": 0.20217474386201453,
+            "label": "0.202% stdev"
           },
           "sentiment": {
             "value": 0,
-            "label": "funding 0.0072%, L/S ratio 1.41"
+            "label": "funding 0.0083%, L/S ratio 1.40"
           }
         }
       },
@@ -465,11 +465,6 @@
     },
     "SOLUSDT": {
       "priceHistory": [
-        74.545,
-        74.326,
-        74.336,
-        74.512,
-        74.659,
         74.588,
         74.584,
         74.517,
@@ -664,49 +659,50 @@
         77.89,
         77.516,
         77.569,
-        77.474
+        77.474,
+        77.704,
+        77.578,
+        77.694,
+        77.852,
+        77.851
       ],
       "lastDecision": {
-        "timestamp": "2026-07-15T16:47:49.442Z",
+        "timestamp": "2026-07-15T18:03:21.856Z",
         "pair": "SOLUSDT",
-        "state": "DIAGNOSED",
-        "convictionScore": 72,
+        "state": "INCONCLUSIVE",
+        "convictionScore": 54,
         "direction": "short",
-        "price": 77.474,
+        "price": 77.851,
         "quantity": 0,
         "balanceChange": 0,
-        "balanceAfter": 8903.465531579468,
-        "reason": "Trend and sentiment signals agree with low noise. Trend: -0.76% move over last 10 candles. Sentiment: funding 0.0031%, L/S ratio 3.21 — extreme L/S skew, treated as contrarian/crowded. Taking a full-conviction position.",
+        "balanceAfter": 8894.672632300946,
+        "reason": "Partial agreement between signals. Trend: -0.04% move over last 10 candles. Sentiment: funding 0.0030%, L/S ratio 3.24 — extreme L/S skew, treated as contrarian/crowded. Taking a reduced position sized to uncertainty.",
         "detail": {
           "trend": {
-            "value": -37.98019649787934,
-            "label": "-0.76% move over last 10 candles"
+            "value": -1.9260153310821087,
+            "label": "-0.04% move over last 10 candles"
           },
           "vol": {
-            "value": 0.26700090342113303,
-            "label": "0.267% stdev"
+            "value": 0.19593787529373932,
+            "label": "0.196% stdev"
           },
           "sentiment": {
             "value": -60,
-            "label": "funding 0.0031%, L/S ratio 3.21 — extreme L/S skew, treated as contrarian/crowded"
+            "label": "funding 0.0030%, L/S ratio 3.24 — extreme L/S skew, treated as contrarian/crowded"
           }
         }
       },
       "openPosition": {
-        "openedAt": "2026-07-15T16:02:49.325Z",
+        "openedAt": "2026-07-15T17:03:21.865Z",
         "pair": "SOLUSDT",
         "direction": "short",
         "convictionScore": 60,
-        "entryPrice": 77.89,
-        "quantity": 17.124476114355897
+        "entryPrice": 77.704,
+        "quantity": 17.191197415687526
       }
     },
     "BNBUSDT": {
       "priceHistory": [
-        570.49,
-        569.48,
-        569.18,
-        568.19,
         567.72,
         567.21,
         566.01,
@@ -902,27 +898,31 @@
         580.35,
         578.96,
         578.88,
-        577.94
+        577.94,
+        578.66,
+        578.64,
+        579.65,
+        579.9
       ],
       "lastDecision": {
-        "timestamp": "2026-07-15T16:47:51.683Z",
+        "timestamp": "2026-07-15T17:48:24.136Z",
         "pair": "BNBUSDT",
         "state": "FAULT",
-        "convictionScore": 12,
+        "convictionScore": 1,
         "direction": "none",
-        "price": 577.94,
+        "price": 579.9,
         "quantity": 0,
         "balanceChange": 0,
-        "balanceAfter": 8903.465531579468,
-        "reason": "Signals contradict or noise too high to diagnose cleanly. Trend: -0.53% move over last 10 candles. Sentiment: funding 0.0100%, L/S ratio 1.00. Volatility: 0.180% stdev. Refusing to trade — protecting capital over forcing a read.",
+        "balanceAfter": 8895.566636747939,
+        "reason": "Signals contradict or noise too high to diagnose cleanly. Trend: -0.12% move over last 10 candles. Sentiment: funding 0.0100%, L/S ratio 1.00. Volatility: 0.174% stdev. Refusing to trade — protecting capital over forcing a read.",
         "detail": {
           "trend": {
-            "value": -26.590709601913137,
-            "label": "-0.53% move over last 10 candles"
+            "value": -5.770191363660478,
+            "label": "-0.12% move over last 10 candles"
           },
           "vol": {
-            "value": 0.1799279517634845,
-            "label": "0.180% stdev"
+            "value": 0.17440454572532893,
+            "label": "0.174% stdev"
           },
           "sentiment": {
             "value": 0,
@@ -934,10 +934,6 @@
     },
     "XRPUSDT": {
       "priceHistory": [
-        1.0739,
-        1.0742,
-        1.0775,
-        1.0763,
         1.0771,
         1.0733,
         1.0724,
@@ -1133,49 +1129,49 @@
         1.1255,
         1.1178,
         1.1154,
-        1.1125
+        1.1125,
+        1.114,
+        1.1118,
+        1.1135,
+        1.1161
       ],
       "lastDecision": {
-        "timestamp": "2026-07-15T16:47:53.960Z",
+        "timestamp": "2026-07-15T17:48:26.380Z",
         "pair": "XRPUSDT",
-        "state": "DIAGNOSED",
-        "convictionScore": 76,
+        "state": "INCONCLUSIVE",
+        "convictionScore": 67,
         "direction": "short",
-        "price": 1.1125,
-        "quantity": 1520.5918660675045,
-        "balanceChange": -1.0149950706000592,
-        "balanceAfter": 8902.450536508868,
-        "reason": "Trend and sentiment signals agree with low noise. Trend: -0.93% move over last 10 candles. Sentiment: funding 0.0100%, L/S ratio 4.39 — extreme L/S skew, treated as contrarian/crowded. Taking a full-conviction position.",
+        "price": 1.1161,
+        "quantity": 1335.0124645240387,
+        "balanceChange": -0.8940044469931678,
+        "balanceAfter": 8894.672632300946,
+        "reason": "Partial agreement between signals. Trend: -0.61% move over last 10 candles. Sentiment: funding 0.0089%, L/S ratio 4.30 — extreme L/S skew, treated as contrarian/crowded. Taking a reduced position sized to uncertainty.",
         "detail": {
           "trend": {
-            "value": -46.74977738201226,
-            "label": "-0.93% move over last 10 candles"
+            "value": -30.721282279607777,
+            "label": "-0.61% move over last 10 candles"
           },
           "vol": {
-            "value": 0.3578374664745766,
-            "label": "0.358% stdev"
+            "value": 0.4341722652339995,
+            "label": "0.434% stdev"
           },
           "sentiment": {
             "value": -60,
-            "label": "funding 0.0100%, L/S ratio 4.39 — extreme L/S skew, treated as contrarian/crowded"
+            "label": "funding 0.0089%, L/S ratio 4.30 — extreme L/S skew, treated as contrarian/crowded"
           }
         }
       },
       "openPosition": {
-        "openedAt": "2026-07-15T16:47:53.960Z",
+        "openedAt": "2026-07-15T17:48:26.380Z",
         "pair": "XRPUSDT",
         "direction": "short",
-        "convictionScore": 76,
-        "entryPrice": 1.1125,
-        "quantity": 1520.5918660675045
+        "convictionScore": 67,
+        "entryPrice": 1.1161,
+        "quantity": 1335.0124645240387
       }
     },
     "DOGEUSDT": {
       "priceHistory": [
-        0.07229,
-        0.07237,
-        0.07251,
-        0.07233,
         0.07234,
         0.07207,
         0.07202,
@@ -1371,27 +1367,31 @@
         0.07441,
         0.07401,
         0.07395,
-        0.07382
+        0.07382,
+        0.07399,
+        0.07383,
+        0.07395,
+        0.07411
       ],
       "lastDecision": {
-        "timestamp": "2026-07-15T16:47:56.215Z",
+        "timestamp": "2026-07-15T17:48:28.609Z",
         "pair": "DOGEUSDT",
         "state": "FAULT",
-        "convictionScore": 28,
+        "convictionScore": 9,
         "direction": "none",
-        "price": 0.07382,
+        "price": 0.07411,
         "quantity": 0,
         "balanceChange": 0,
-        "balanceAfter": 8902.450536508868,
-        "reason": "Signals contradict or noise too high to diagnose cleanly. Trend: -1.27% move over last 10 candles. Sentiment: funding 0.0100%, L/S ratio 1.00. Volatility: 0.443% stdev. Refusing to trade — protecting capital over forcing a read.",
+        "balanceAfter": 8894.672632300946,
+        "reason": "Signals contradict or noise too high to diagnose cleanly. Trend: -0.47% move over last 10 candles. Sentiment: funding 0.0100%, L/S ratio 1.00. Volatility: 0.370% stdev. Refusing to trade — protecting capital over forcing a read.",
         "detail": {
           "trend": {
-            "value": -63.52815300254156,
-            "label": "-1.27% move over last 10 candles"
+            "value": -23.50255170561396,
+            "label": "-0.47% move over last 10 candles"
           },
           "vol": {
-            "value": 0.4428112686257371,
-            "label": "0.443% stdev"
+            "value": 0.3700522875088496,
+            "label": "0.370% stdev"
           },
           "sentiment": {
             "value": 0,
@@ -1403,10 +1403,6 @@
     },
     "ADAUSDT": {
       "priceHistory": [
-        0.1591,
-        0.1598,
-        0.16,
-        0.1594,
         0.1594,
         0.1588,
         0.1589,
@@ -1602,49 +1598,42 @@
         0.1653,
         0.1641,
         0.1641,
-        0.1636
+        0.1636,
+        0.1636,
+        0.1636,
+        0.1646,
+        0.1644
       ],
       "lastDecision": {
-        "timestamp": "2026-07-15T16:47:58.474Z",
+        "timestamp": "2026-07-15T17:48:30.864Z",
         "pair": "ADAUSDT",
-        "state": "INCONCLUSIVE",
-        "convictionScore": 33,
-        "direction": "short",
-        "price": 0.1636,
+        "state": "FAULT",
+        "convictionScore": 19,
+        "direction": "none",
+        "price": 0.1644,
         "quantity": 0,
         "balanceChange": 0,
-        "balanceAfter": 8902.450536508868,
-        "reason": "Partial agreement between signals. Trend: -1.51% move over last 10 candles. Sentiment: funding -0.0006%, L/S ratio 1.00. Taking a reduced position sized to uncertainty.",
+        "balanceAfter": 8894.672632300946,
+        "reason": "Signals contradict or noise too high to diagnose cleanly. Trend: -0.90% move over last 10 candles. Sentiment: funding 0.0042%, L/S ratio 1.00. Volatility: 0.511% stdev. Refusing to trade — protecting capital over forcing a read.",
         "detail": {
           "trend": {
-            "value": -75.25586995785677,
-            "label": "-1.51% move over last 10 candles"
+            "value": -45.20795660036171,
+            "label": "-0.90% move over last 10 candles"
           },
           "vol": {
-            "value": 0.5365991683911607,
-            "label": "0.537% stdev"
+            "value": 0.510783016111855,
+            "label": "0.511% stdev"
           },
           "sentiment": {
             "value": 0,
-            "label": "funding -0.0006%, L/S ratio 1.00"
+            "label": "funding 0.0042%, L/S ratio 1.00"
           }
         }
       },
-      "openPosition": {
-        "openedAt": "2026-07-15T16:32:58.308Z",
-        "pair": "ADAUSDT",
-        "direction": "short",
-        "convictionScore": 31,
-        "entryPrice": 0.1641,
-        "quantity": 4199.153707898874
-      }
+      "openPosition": null
     },
     "AVAXUSDT": {
       "priceHistory": [
-        6.633,
-        6.657,
-        6.664,
-        6.613,
         6.614,
         6.576,
         6.571,
@@ -1840,27 +1829,31 @@
         6.736,
         6.692,
         6.694,
-        6.686
+        6.686,
+        6.703,
+        6.696,
+        6.71,
+        6.713
       ],
       "lastDecision": {
-        "timestamp": "2026-07-15T16:48:00.778Z",
+        "timestamp": "2026-07-15T17:48:33.113Z",
         "pair": "AVAXUSDT",
         "state": "FAULT",
-        "convictionScore": 0,
+        "convictionScore": 5,
         "direction": "none",
-        "price": 6.686,
+        "price": 6.713,
         "quantity": 0,
         "balanceChange": 0,
-        "balanceAfter": 8902.450536508868,
-        "reason": "Signals contradict or noise too high to diagnose cleanly. Trend: -0.01% move over last 10 candles. Sentiment: funding 0.0100%, L/S ratio 1.00. Volatility: 0.235% stdev. Refusing to trade — protecting capital over forcing a read.",
+        "balanceAfter": 8894.672632300946,
+        "reason": "Signals contradict or noise too high to diagnose cleanly. Trend: 0.25% move over last 10 candles. Sentiment: funding 0.0100%, L/S ratio 1.00. Volatility: 0.207% stdev. Refusing to trade — protecting capital over forcing a read.",
         "detail": {
           "trend": {
-            "value": -0.7477194556604859,
-            "label": "-0.01% move over last 10 candles"
+            "value": 12.694145758662149,
+            "label": "0.25% move over last 10 candles"
           },
           "vol": {
-            "value": 0.23480373934236404,
-            "label": "0.235% stdev"
+            "value": 0.2066325065822923,
+            "label": "0.207% stdev"
           },
           "sentiment": {
             "value": 0,
@@ -1872,10 +1865,6 @@
     },
     "LINKUSDT": {
       "priceHistory": [
-        7.936,
-        7.953,
-        7.982,
-        7.956,
         7.978,
         7.945,
         7.932,
@@ -2071,27 +2060,31 @@
         8.538,
         8.496,
         8.482,
-        8.472
+        8.472,
+        8.486,
+        8.488,
+        8.519,
+        8.538
       ],
       "lastDecision": {
-        "timestamp": "2026-07-15T16:48:03.025Z",
+        "timestamp": "2026-07-15T17:48:35.353Z",
         "pair": "LINKUSDT",
         "state": "FAULT",
-        "convictionScore": 10,
+        "convictionScore": 2,
         "direction": "none",
-        "price": 8.472,
+        "price": 8.538,
         "quantity": 0,
         "balanceChange": 0,
-        "balanceAfter": 8902.450536508868,
-        "reason": "Signals contradict or noise too high to diagnose cleanly. Trend: -0.52% move over last 10 candles. Sentiment: funding 0.0100%, L/S ratio 1.00. Volatility: 0.346% stdev. Refusing to trade — protecting capital over forcing a read.",
+        "balanceAfter": 8894.672632300946,
+        "reason": "Signals contradict or noise too high to diagnose cleanly. Trend: -0.19% move over last 10 candles. Sentiment: funding 0.0100%, L/S ratio 1.00. Volatility: 0.353% stdev. Refusing to trade — protecting capital over forcing a read.",
         "detail": {
           "trend": {
-            "value": -25.83372475340564,
-            "label": "-0.52% move over last 10 candles"
+            "value": -9.3523497778817,
+            "label": "-0.19% move over last 10 candles"
           },
           "vol": {
-            "value": 0.3456588860586591,
-            "label": "0.346% stdev"
+            "value": 0.3527157779236837,
+            "label": "0.353% stdev"
           },
           "sentiment": {
             "value": 0,
@@ -2102,5 +2095,5 @@
       "openPosition": null
     }
   },
-  "cyclesRun": 2212
+  "cyclesRun": 2216
 }
